@@ -4,7 +4,7 @@ const bcrypt = require("bcrypt");
 const sequelize = new Sequelize(
     'transcendence',
     'souaguen',
-    'secret_password',
+    'secretpass',
     {
         host: 'mariadb',
         dialect: 'mariadb',

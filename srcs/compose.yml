@@ -34,17 +34,28 @@ services:
     networks:
       - http
     expose:
-      - 3001
+      - 3000
   auth:
     build: ./auth
     restart: always
     image: auth
+    depends_on:
+      - mariadb
     container_name: auth
     networks:
       - http
       - dbnet
     expose:
-      - 3000
+      - 3001
+  llm:
+    build: ./llm
+    restart: always
+    image: llm
+    container_name: llm
+    networks:
+      - http
+    expose:
+      - 3002
   nginx:
     build: ./nginx
     image: nginx
