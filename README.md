@@ -60,14 +60,17 @@ Supported document types:
 ---
 
 ## 🏗️ Architecture
+
+```
 User
-↓ HTTPS
+  ↓ HTTPS
 Nginx (Reverse Proxy)
-├── Frontend (React)
-├── Auth API (Node.js + Sequelize)
-└── AI API (WebSocket + Ollama)
-↓
-MariaDB
+  ├── Frontend (React)
+  ├── Auth API (Node.js + Sequelize)
+  └── AI API (WebSocket + Ollama)
+        ↓
+      MariaDB
+```
 
 ---
 
