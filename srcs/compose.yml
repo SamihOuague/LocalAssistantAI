@@ -47,13 +47,14 @@ services:
       - dbnet
     expose:
       - 3001
-  llm:
-    build: ./llm
+  chatllm:
+    build: ./chatllm
     restart: always
-    image: llm
-    container_name: llm
+    image: chatllm
+    container_name: chatllm
     networks:
       - http
+      - dbnet
     expose:
       - 3002
   nginx:

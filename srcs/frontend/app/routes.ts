@@ -6,5 +6,6 @@ import {
 
 export default [
     index("routes/home.tsx"),
-    route("auth", "./auth/auth.tsx")
+    route("auth", "./auth/auth.tsx"),
+    route("chat", "./chatpage/chatpage.tsx")
 ] satisfies RouteConfig;

@@ -9,6 +9,10 @@
     "typecheck": "react-router typegen && tsc"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^9.0.0",
+    "@mui/styled-engine-sc": "^9.0.0",
     "@react-router/node": "7.14.0",
     "@react-router/serve": "7.14.0",
     "isbot": "^5.1.36",
@@ -17,7 +21,9 @@
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
     "react-router": "7.14.0",
+    "react-use-websocket": "^4.13.0",
     "remark-gfm": "^4.0.1",
+    "styled-components": "^6.4.1",
     "ws": "^8.20.0"
   },
   "devDependencies": {
