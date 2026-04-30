@@ -1,9 +1,11 @@
-const router = require("express").Router();
-const { signin, signup } = require("../middleware/Auth");
-const { getToken, ping } = require("./Controller");
+import { Router } from "express";
+import { register, login } from "../middleware/Auth.js";
+import { getToken, ping } from "./Controller.js";
 
-router.post("/signup", signin, getToken);
-router.post("/signin", signup, getToken);
+const router = Router();
+
+router.post("/login", login, getToken);
+router.post("/register", register, getToken);
 router.get("/ping", ping);
 
-module.exports = router;
+export default router;

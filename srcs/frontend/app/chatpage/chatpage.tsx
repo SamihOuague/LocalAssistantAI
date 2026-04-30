@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ws from "../lib/WebSocketManager";
@@ -7,6 +7,7 @@ import ws from "../lib/WebSocketManager";
 export default function ChatPage() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [activeConversation, setActiveConversation] = useState<number | null>(null);
+  const navigate = useNavigate();
 
   const [messages, setMessages] = useState<any[]>([
     {
@@ -24,6 +25,8 @@ export default function ChatPage() {
 
   useEffect(() => {
     const token = localStorage.getItem("token") || "";
+    if (!token)
+      navigate("/auth");
     const fetchChatHistory = async () => {
       try {
         let response = await fetch(`https://localhost/docs/chat/${activeConversation}`, {
@@ -34,16 +37,18 @@ export default function ChatPage() {
           }
         });
         if (response.status != 200)
-          return ;
+          return;
         let chatHistory = await response.json();
         if (chatHistory.length)
           setMessages(chatHistory);
-      } catch(err) {
+      } catch (err) {
+        localStorage.removeItem("token");
+        navigate("/auth");
         console.error(err);
       }
     };
-
-    fetchChatHistory();
+    if (activeConversation)
+      fetchChatHistory();
   }, [activeConversation]);
 
   useEffect(() => {
@@ -58,10 +63,12 @@ export default function ChatPage() {
           }
         });
         if (response.status != 200)
-          return ;
+          return;
         let chatList = await response.json();
         setConversations(chatList);
-      } catch(err) {
+      } catch (err) {
+        localStorage.removeItem("token");
+        navigate("/auth");
         console.error(err);
       }
     };
@@ -71,9 +78,14 @@ export default function ChatPage() {
     let thinkingBuffer = "";
 
     const unsubscribe = ws.subscribe((data) => {
+      if (data.status == "auth") {
+        localStorage.removeItem("token");
+        navigate("/auth");
+        return;
+      }
       if (data.chatBoxId != activeConversation)
-        return ;
-      
+        return;
+
       if (data.status === "thinking") {
         if (showThinking) {
           thinkingBuffer += data.chunk || "";
@@ -84,7 +96,8 @@ export default function ChatPage() {
 
       if (data.status === "answer") {
         setIsLoading(true);
-
+        if (thinking !== "")
+          setThinking("");
         const chunk = data.chunk || "";
         answerBuffer += chunk;
 
@@ -134,7 +147,6 @@ export default function ChatPage() {
 
         answerBuffer = "";
         thinkingBuffer = "";
-        setThinking("");
       }
     });
     fetchChatBox();
@@ -232,7 +244,25 @@ export default function ChatPage() {
     }
   };
 
-  const deleteConversation = (id: number) => {
+  const deleteConversation = async (id: number) => {
+    const token = localStorage.getItem("token") || "";
+
+    try {
+      let response = await fetch(`https://localhost/docs/chat/${id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Barear ${token}`
+        }
+      });
+      if (response.status != 201)
+        return;
+      await response.json();
+      setConversations((prev) => prev.filter((elt) => elt.id === id));
+    } catch (err) {
+      console.error(err);
+    }
+
     setConversations((prev) => prev.filter((c) => c.id !== id));
 
     if (activeConversation === id) {

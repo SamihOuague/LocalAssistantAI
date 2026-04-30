@@ -1,18 +1,22 @@
-const { Sequelize, DataTypes, Model } = require("sequelize");
-const bcrypt = require("bcrypt");
+import { Sequelize, DataTypes, Model } from "sequelize";
+import bcrypt from "bcrypt";
 
 const sequelize = new Sequelize(
-    'transcendence',
-    'souaguen',
-    'secretpass',
+    process.env.DB_NAME || 'transcendence',
+    process.env.DB_USER || 'souaguen',
+    process.env.DB_PASSWORD || 'secretpass',
     {
-        host: 'mariadb',
-        dialect: 'mariadb',
+        host: process.env.DB_HOST || 'mariadb',
+        dialect: process.env.DB_DIALECT || 'mariadb',
     }
 );
 
 // Valid
-class User extends Model {}
+class User extends Model {
+    passwordCompare(password) {
+        return bcrypt.compareSync(password, this.password);
+    }
+}
 
 User.init(
     {
@@ -37,7 +41,7 @@ User.init(
     {
         sequelize,
         hooks: {
-            beforeValidate: (user, options) => {
+            beforeCreate: (user, options) => {
                 const   salt = bcrypt.genSaltSync(10);
                 user.password = bcrypt.hashSync(user.password, salt);
             },
@@ -52,6 +56,4 @@ User.init(
     console.log('All models were synchronized successfully.');
 })();
 
-module.exports = {
-    User
-};
+export { User }

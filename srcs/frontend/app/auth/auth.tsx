@@ -21,8 +21,8 @@ export default function Auth() {
 
   const endpoint =
     mode === "login"
-      ? "https://localhost/api/auth/signin"
-      : "https://localhost/api/auth/signup";
+      ? "https://localhost/api/auth/login"
+      : "https://localhost/api/auth/register";
 
   const submit = async (e: any) => {
     e.preventDefault();

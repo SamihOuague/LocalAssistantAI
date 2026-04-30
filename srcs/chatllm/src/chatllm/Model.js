@@ -1,12 +1,12 @@
 import { Sequelize, DataTypes, Model } from "sequelize";
 
 const sequelize = new Sequelize(
-    'transcendence',
-    'souaguen',
-    'secretpass',
+    process.env.DB_NAME || 'transcendence',
+    process.env.DB_USER || 'souaguen',
+    process.env.DB_PASSWORD || 'secretpass',
     {
-        host: 'mariadb',
-        dialect: 'mariadb',
+        host: process.env.DB_HOST || 'mariadb',
+        dialect: process.env.DB_DIALECT || 'mariadb',
     }
 );
 
@@ -59,8 +59,8 @@ ChatMessage.init(
     },
     {
         sequelize,
-        modelName: "ChatMessages",
-        tableName: "chat_messages",
+        modelName: "ChatMessage",
+        tableName: "chat_message",
     },
 );
 
@@ -75,7 +75,7 @@ ChatMessage.belongsTo(ChatBox, {
 });
 
 (async function () {
-    await sequelize.drop();
+    await ChatBox.drop();
     console.log('All tables dropped!');
     await sequelize.sync({ force: true });
     console.log('All models were synchronized successfully.');

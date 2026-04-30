@@ -21,7 +21,7 @@ class WebSocketManager {
 
   // Connection unique
   public connect(token: string) {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !token) return;
 
     if (
       this.socket &&
