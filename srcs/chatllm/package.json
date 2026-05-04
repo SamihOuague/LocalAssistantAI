@@ -16,6 +16,7 @@
     "jsonwebtoken": "^9.0.3",
     "mariadb": "^3.5.2",
     "ollama": "^0.6.3",
+    "openai": "^6.35.0",
     "sequelize": "^6.37.8",
     "ws": "^8.20.0"
   }

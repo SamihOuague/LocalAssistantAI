@@ -78,7 +78,6 @@ export default function ChatPage() {
     let thinkingBuffer = "";
 
     const unsubscribe = ws.subscribe((data) => {
-      console.log(data);
       if (data.status == "auth") {
         localStorage.removeItem("token");
         navigate("/auth");

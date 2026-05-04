@@ -7,6 +7,7 @@ class OllamaProvider {
             host: process.env.OLLAMA_URL || "http://172.17.0.1:11434"
         });
     }
+
     async generateStream({ messages, think = true, ontoken }, callback) {
         const stream = await this.client.chat({
             model: this.model,
