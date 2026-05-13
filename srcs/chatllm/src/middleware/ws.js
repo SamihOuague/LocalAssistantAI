@@ -1,13 +1,11 @@
 import { Ollama } from "ollama";
 import { ChatBox, ChatMessage } from "../chatllm/Model.js";
-import OllamaProvider from "../core/OllamaProvider.js";
-import VLLMProvider from "../core/VLLMProvider.js";
 import LLMService from "../service/LLMService.js";
 import url from "url";
 import jwt from "jsonwebtoken";
 
-const provider = new VLLMProvider("Qwen/Qwen2.5-3B-Instruct");
-const llmService = new LLMService(provider);
+const llmService = new LLMService();
+(async () => await llmService.router.initRoutes())();
 
 export const isAuthWs = (ws, req) => {
     try {

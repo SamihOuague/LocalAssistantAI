@@ -1,14 +1,14 @@
 import { Ollama } from "ollama";
 
 class OllamaProvider {
-    constructor(model = "LegallyAI") {
+    constructor(model = "llama3.1") {
         this.model = model;
         this.client = new Ollama({
             host: process.env.OLLAMA_URL || "http://172.17.0.1:11434"
         });
     }
 
-    async generateStream({ messages, think = true, ontoken }, callback) {
+    async   generateStream({ messages, think = true, ontoken }, callback) {
         const stream = await this.client.chat({
             model: this.model,
             messages,
@@ -29,6 +29,11 @@ class OllamaProvider {
             });
         }
         callback({ status: "finished", content, thinking });
+    }
+
+    async   generateEmbedding(prompt) {
+        const response = await this.client.embeddings({model: this.model, prompt});
+        return response;
     }
 }
 

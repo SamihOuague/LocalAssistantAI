@@ -6,7 +6,7 @@
 #    By: souaguen <souaguen@student.42.fr>          +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2025/09/27 03:35:31 by souaguen          #+#    #+#              #
-#    Updated: 2025/10/02 12:52:44 by souaguen         ###   ########.fr        #
+#    Updated: 2026/05/09 02:13:04 by souaguen         ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
@@ -52,9 +52,11 @@ services:
     runtime: nvidia
     expose:
       - 8000
+    ports:
+      - "8000:8000"
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
-    command: ["--model", "Qwen/Qwen2.5-3B-Instruct"]
+    command: ["--model", "Qwen/Qwen2.5-3B-Instruct", "--enable-prompt-embeds"]
     deploy:
       resources:
         reservations:
