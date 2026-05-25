@@ -110,13 +110,17 @@ services:
       - http
   vllmService:
     image: vllm/vllm-openai:latest
-    container_name: vllm
     runtime: nvidia
-    expose:
-      - 8000
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
-    command: ["--model", "Qwen/Qwen2.5-3B-Instruct", "--enable-prompt-embeds"]
+    command: [
+      "--model", "Qwen/Qwen2.5-7B-Instruct-AWQ",
+      "--enable-prompt-embeds",
+      "--enable-auto-tool-choice",
+      "--tool-call-parser", "hermes"
+    ]
+    expose:
+      - 8000
     deploy:
       resources:
         reservations:
@@ -259,6 +263,7 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD_FILE=${DB_PASSWORD_FILE}
+      - PORT=3002
     volumes:
       - certs:/usr/share/chatllm/config/certs
     secrets:
