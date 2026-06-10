@@ -7,17 +7,11 @@ metricbeat.modules:
     xpack.enabled: true
     period: 10s
     hosts: ${ELASTIC_HOSTS}
-    ssl.certificate_authorities: "certs/ca/ca.crt"
-    ssl.certificate: "certs/es01/es01.crt"
-    ssl.key: "certs/es01/es01.key"
     username: ${ELASTIC_USER}
     password: ${ELASTIC_PASSWORD}
     ssl.enabled: true
-
-  - module: logstash
-    xpack.enabled: true
-    period: 10s
-    hosts: ${LOGSTASH_HOSTS}
+    ssl.certificate_authorities: "certs/ca/ca.crt"
+    ccr.enabled: false
 
   - module: kibana
     metricsets:
@@ -28,19 +22,27 @@ metricbeat.modules:
     password: ${ELASTIC_PASSWORD}
     xpack.enabled: true
 
+  - module: logstash
+    xpack.enabled: true
+    period: 10s
+    hosts: ${LOGSTASH_HOSTS}
+
   - module: docker
     metricsets:
-      - "container"
-      - "cpu"
-      - "diskio"
-      - "healthcheck"
-      - "info"
-      #- "image"
-      - "memory"
-      - "network"
+      - container
+      - cpu
     hosts: ["unix:///var/run/docker.sock"]
     period: 10s
     enabled: true
+
+    processors:
+      - drop_fields:
+          fields:
+            - docker.container.labels
+            - docker.container.image
+            - docker.container.command
+            - docker.container.created
+            - docker.container.network
 
 processors:
   - add_host_metadata: ~
@@ -51,6 +53,7 @@ output.elasticsearch:
   username: ${ELASTIC_USER}
   password: ${ELASTIC_PASSWORD}
   ssl:
+    enabled: true
     certificate: "certs/es01/es01.crt"
-    certificate_authorities: "certs/ca/ca.crt"
+    certificate_authorities: "/usr/share/metricbeat/certs/ca/ca.crt"
     key: "certs/es01/es01.key"

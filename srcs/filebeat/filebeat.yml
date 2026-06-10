@@ -1,0 +1,22 @@
+filebeat.inputs:
+  - type: filestream
+    id: docker-logs
+    enabled: true
+    paths:
+      - /var/lib/docker/containers/*/*.log
+    parser:
+      - docker
+
+  - type: filestream
+    id: nginx-logs
+    enabled: true
+    paths:
+      - /usr/share/filebeat/ingest_data/*.log
+
+setup.kibana:
+  host: ${KIBANA_HOSTS}
+  username: ${ELASTIC_USER}
+  password: ${ELASTIC_PASSWORD}
+
+output.logstash:
+  hosts: ["logstash:5044"]

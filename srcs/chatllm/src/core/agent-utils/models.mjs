@@ -20,3 +20,11 @@ export const vllm = new ChatOpenAI({
         baseURL: process.env.VLLM_URL,
     }
 });
+
+export const openAi = new ChatOpenAI({
+    model: process.env.OPENAI_MODEL_NAME,
+    apiKey: process.env.OPENAI_API_KEY,
+    configuration: {
+        baseURL: process.env.OPENAI_URL,
+    }
+});

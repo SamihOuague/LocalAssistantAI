@@ -17,7 +17,7 @@ if (process.env.ELASTIC_API_KEY) {
         password: process.env.ELASTIC_PASSWORD,
     };
 }
-// Local Docker deploys require a TLS certificate
+
 if (process.env.ELASTIC_CERT_PATH) {
     config.tls = {
         ca: fs.readFileSync(process.env.ELASTIC_CERT_PATH),

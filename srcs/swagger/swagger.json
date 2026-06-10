@@ -1,0 +1,72 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ChatLLM API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/generate": {
+      "post": {
+        "summary": "Send message to LLM",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "properties": {
+                        "role": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/new-chat": {
+      "post": {
+        "summary": "Create a new chatbox"
+      }
+    },
+    "/chat/:id": {
+      "post": {
+        "summary": "Post a new prompt in the history and generate response from LLM"
+      }
+    },
+    "/chat": {
+      "get": {
+        "summary": "List of chatboxes histories"
+      }
+    },
+    "/history/:id": {
+      "get": {
+        "summary": "Get the history chatbox."
+      },
+      "delete": {
+        "summary": "Delete history chatbox."
+      }
+    },
+    "/chat/:id/:msgId": {
+      "put": {
+        "summary": "Update a message and regenerate response from the llm"
+      }
+    }
+  }
+}

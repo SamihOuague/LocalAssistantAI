@@ -12,7 +12,6 @@ export const retrieve = tool(
                 (doc) => `Source: ${doc.metadata.source}\nContent: ${doc.pageContent}`
             )
             .join("\n");
-
         return [serialized, retrievedDocs];
     },
     {

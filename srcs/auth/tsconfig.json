@@ -1,0 +1,36 @@
+{
+  "compilerOptions":
+  {
+    // --- Output structure ---
+    "rootDir": "./src",
+    "outDir": "./dist",
+
+    // --- Language target ---
+    "target": "ES2023",
+    "lib": ["ES2023"],
+
+    // --- Module system ---
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    // --- Type checking strictness ---
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // --- TS 6 required configs ---
+    "types": ["node"],
+
+    // --- Interop & ergonomics ---
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+
+    // --- Build artifacts ---
+    "declaration": false,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,20 +1,12 @@
 import { Sequelize, DataTypes, Model } from "sequelize";
 import { readFileSync, readdirSync } from "node:fs";
 
-let password = "";
 
-try {
-    password = readFileSync(`/run/secrets/${process.env.DB_PASSWORD_FILE}`);
-    password = password.toString();
-} catch (err) {
-    console.error(err);
-}
-
-console.log(process.env.DB_HOST);
+console.log(process.env.DB_DIALECT);
 const sequelize = new Sequelize(
     process.env.DB_NAME,
     process.env.DB_USER,
-    password,
+    process.env.DB_PASSWORD,
     {
         host: process.env.DB_HOST,
         dialect: process.env.DB_DIALECT,
@@ -31,7 +23,7 @@ ChatBox.init(
             primaryKey: true,
         },
         idUser: {
-            type: DataTypes.INTEGER,
+            type: DataTypes.TEXT,
             allowNull: false,
         },
         title: {

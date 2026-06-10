@@ -1,0 +1,214 @@
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   index.css                                          :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: odile <odile@student.42.fr>                +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2026/06/02 00:24:32 by odile             #+#    #+#             */
+/*   Updated: 2026/06/02 19:59:11 by odile            ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    background: #f5f7fa;
+    font-family: Arial, sans-serif;
+}
+.navbar {
+    background: #1f2937;
+    color: white;
+    height: 70px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 2rem;
+}
+.nav-links {
+    display: flex;
+    gap: 1rem;
+}
+.logo{
+     color: white;
+     cursor: pointer;
+     text-decoration: none;
+}
+.nav-links a {
+    color: white;
+    text-decoration: none;
+}
+.content {
+    min-height: calc(100vh - 140px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+}
+.card {
+    background: white;
+    padding: 2rem;
+    border-radius: 16px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    text-align: center;
+}
+button {
+    margin-top: 1rem;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+}
+.footer {
+    background: #1f2937;
+    color: white;
+    height: 70px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    background: white;
+    padding: 2rem;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.login-card h1 {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.login-form label {
+    font-weight: 600;
+}
+.login-form input {
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+}
+.login-form input:focus {
+    outline: none;
+    border-color: #2563eb;
+}
+.login-form button {
+    margin-top: 1rem;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem;
+    cursor: pointer;
+    font-size: 1rem;
+}
+.login-form button:hover {
+    opacity: 0.9;
+}
+.login-register {
+    text-align: center;
+    margin-top: 1rem;
+    color: #6b7280;
+}
+.login-register a {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 600;
+}
+.login-register a:hover {
+    text-decoration: underline;
+}
+.dashboard-container {
+    width: 100%;
+    max-width: 800px;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+.dashboard-container h1 {
+    text-align: center;
+}
+.dashboard-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.dashboard-card h2 {
+    margin-bottom: 1rem;
+}
+.dashboard-card ul {
+    list-style: none;
+    padding: 0;
+}
+.dashboard-card li {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+.dashboard-card li:last-child {
+    border-bottom: none;
+}
+.chat-page {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.chat-page h1 {
+    text-align: center;
+}
+.chat-container {
+    background: white;
+    border-radius: 16px;
+    padding: 1rem;
+    min-height: 500px;
+    max-height: 500px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.message {
+    max-width: 70%;
+    padding: 1rem;
+    border-radius: 12px;
+}
+.user-message {
+    align-self: flex-end;
+    background: #2563eb;
+    color: white;
+}
+.assistant-message {
+    align-self: flex-start;
+    background: #e5e7eb;
+}
+.chat-input-container {
+    /* display: flex;*/ 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+}
+.chat-input-container input {
+    flex: 1;
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+}
+.chat-input-container button {
+    margin-top: 0;
+    padding: 0.75rem 1.5rem;
+}
+
