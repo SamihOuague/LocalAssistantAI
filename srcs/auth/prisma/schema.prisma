@@ -19,6 +19,7 @@ model User {
   username  String @db.VarChar(32) @unique
   passwordHash  String? @db.VarChar(255) @map("password_hash")
   avatarUrl  String? @db.VarChar(255) @map("avatar_url")
+  avatar  Avatar?
   isOnline  Boolean @default(false) @map("is_online")
   lastSeenAt  DateTime? @map("last_seen_at")
   createdAt  DateTime @default(now()) @map("created_at")
@@ -90,4 +91,14 @@ model Friendship {
   @@id([userLow, userHigh])
   @@index([userHigh])
   @@map("friendships")
+}
+
+model Avatar {
+  userId    String   @id @map("user_id") @db.VarChar(36)
+  data      Bytes    @db.MediumBlob
+  mimeType  String   @map("mime_type") @db.VarChar(255)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("avatars")
 }

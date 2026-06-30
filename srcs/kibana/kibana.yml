@@ -7,3 +7,4 @@ elasticsearch.ssl.certificateAuthorities: [ "/usr/share/kibana/config/certs/ca/c
 elasticsearch.ssl.verificationMode: full
 
 monitoring.ui.container.elasticsearch.enabled: true
+server.publicBaseUrl: https://kibana.ft_transcendence

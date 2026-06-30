@@ -29,8 +29,8 @@ SECRETS=$(curl -s \
 
 
 export ELASTICSEARCH_USERNAME=$(echo "$SECRETS" | jq -r '.KIBANA_USERNAME')
-export ELASTICSEARCH_PASSWORD=$(echo "$SECRETS" | jq -r '.ELASTIC_PASSWORD')
-export KIBANA_PASSWORD=$(echo "$SECRETS" | jq -r '.KIBANA_PASSWORD')
+export ELASTICSEARCH_PASSWORD=$(echo "$SECRETS" | jq -r '.KIBANA_PASSWORD')
+export KIBANA_PASSWORD=$(echo "$SECRETS" | jq -r '.ELASTIC_PASSWORD')
 
 exec /usr/local/bin/kibana-docker
 #--------------------------------------------------------------------------------------------------

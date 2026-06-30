@@ -4,6 +4,8 @@ import { Prisma, type PrismaClient } from '../generated/prisma/client.js';
 import type { CryptoKey } from 'jose';
 import { authenticateRequest } from '../auth/tokens.js';
 import { canonicalPair } from '../friends/canonical.js';
+import { derivePresence } from '../presence/presence.js';
+import { acceptedFriendsWhere } from '../friends/queries.js';
 
 interface PublicUser {
   id: string;
@@ -51,15 +53,22 @@ async function listFriendships(
 	  select: {
 	    userLow: true,
 	    userHigh: true,
-	    userLowUser: { select: { id: true, username: true, avatarUrl: true, isOnline: true } },
-	    userHighUser: { select: { id: true, username: true, avatarUrl: true, isOnline: true } },
+	    userLowUser: { select: { id: true, username: true, avatarUrl: true, isOnline: true, lastSeenAt: true } },
+	    userHighUser: { select: { id: true, username: true, avatarUrl: true, isOnline: true, lastSeenAt: true } },
 	  },
 	});
 	const hasMore = rows.length > take;
 	const page = hasMore ? rows.slice(0, take) : rows;
 	const items = page.map((row) =>
-		row.userLow === userId ? row.userHighUser : row.userLowUser,
-	);
+	{
+		const u = row.userLow === userId ? row.userHighUser : row.userLowUser;
+		return {
+		  id: u.id,
+		  username: u.username,
+		  avatarUrl: u.avatarUrl,
+		  isOnline: derivePresence(u.isOnline, u.lastSeenAt),
+		};
+	});
 	return { items, hasMore };
 }
 
@@ -209,10 +218,7 @@ export function createFriendsRouter(
 			return res.status(401).json({ error: 'invalid token' });
 		}
 		const { take, skip } = parsePagination(req);
-		const { items, hasMore } = await listFriendships(prisma, userId, {
-		  status: 'ACCEPTED',
-		  OR: [{ userLow: userId }, { userHigh: userId }],
-		}, take, skip);
+		const { items, hasMore } = await listFriendships(prisma, userId, acceptedFriendsWhere(userId), take, skip);
 		return res.status(200).json({
 		  data: items,
 		  pagination: { limit: take, offset: skip, hasMore },

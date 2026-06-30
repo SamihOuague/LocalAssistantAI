@@ -10,25 +10,103 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { FaRobot } from "react-icons/fa";
+import { useAuth } from "../context/AuthContext";
+
 function Navbar() {
+    const { user, loading, logout } = useAuth();
+    const navigate = useNavigate();
+
+    async function handleLogout() {
+        await logout();
+        navigate("/");
+    }
+
     return (
-        <nav className="navbar">
-            <div className="logo" >
-                <Link to="/login" className="logo">
-                    <FaRobot />
-                    <span>Transcendance</span>
-                </Link>
-            </div>
-            <div className="nav-links">
-                <Link to="/">Accueil</Link>
-                <Link to="/chat">Chat</Link>
-                <Link to="/login">Connexion</Link>
-                <Link to="/register">Inscription</Link>
-                <Link to="/dashboard">Dashboard</Link>
-            </div>
-        </nav>
+		<nav className="navbar navbar-expand-lg bg-dark">
+  			<div className="container-fluid">
+				<Link to="/" className="navbar-brand d-flex align-items-center text-light">
+				<FaRobot className="me-2" />
+				<span>Transcendance</span>
+				</Link>
+				<button
+				className="navbar-toggler bg-light"
+				type="button"
+				data-bs-toggle="collapse"
+				data-bs-target="#navbarNav"
+				aria-controls="navbarNav"
+				aria-expanded="false"
+				aria-label="Toggle navigation"
+				>
+				<span className="navbar-toggler-icon"></span>
+				</button>
+				<div className="collapse navbar-collapse" id="navbarNav">
+				<ul className="navbar-nav ms-auto">
+					<li className="nav-item">
+					<Link className="nav-link text-light" to="/">
+						Accueil
+					</Link>
+					</li>
+					<li className="nav-item">
+					<Link className="nav-link text-light" to="/chat">
+						Chat
+					</Link>
+					</li>
+					{!loading && user === null && (
+					<>
+						<li className="nav-item">
+						<Link className="nav-link text-light" to="/login">
+							Connexion
+						</Link>
+						</li>
+						<li className="nav-item">
+						<Link className="nav-link text-light" to="/register">
+							Inscription
+						</Link>
+						</li>
+					</>
+					)}
+					{!loading && user !== null && (
+					<>
+						{/*<li className="nav-item">
+						<Link className="nav-link text-light" to="/dashboard">
+							Dashboard
+						</Link>
+						</li>*/}
+
+						<li className="nav-item">
+						<Link className="nav-link text-light" to="/friends">
+							Amis
+						</Link>
+						</li>
+
+						<li className="nav-item">
+                                                <Link className="nav-link text-light" to="/profile">
+                                                        Mon profil
+                                                </Link>
+                                                </li>
+
+						<li className="nav-item">
+						<Link className="nav-link text-light" to="/settings">
+							Paramètres
+						</Link>
+						</li>
+						<li className="nav-item">
+						<button
+							type="button"
+							className="btn btn-outline-light ms-lg-2"
+							onClick={handleLogout}
+						>
+							Déconnexion
+						</button>
+						</li>
+					</>
+					)}
+				</ul>
+				</div>
+			</div>
+			</nav>
     );
 }
 export default Navbar;

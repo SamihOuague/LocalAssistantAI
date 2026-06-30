@@ -1,263 +1,283 @@
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { loadWebPage } from "../utils/loadDocs.mjs";
 import { ChatMessage, ChatBox } from "./Model.mjs";
-import vectorStore from "../core/agent-utils/vectorStore.mjs";
 import { Op } from "sequelize";
-import { agent } from "../core/agent.mjs";
+import { llmQueue } from "./utils/llmQueue.mjs";
+import { createChatBox, readChatBox } from "./CRUD/ChatBox.mjs"
+import { createChatMessage, readChatMessage, updateChatMessage } from "./CRUD/ChatMessage.mjs"
+import { markStreamReady } from "./utils/waiters.mjs";
+import { registerStream, deleteStream } from "./utils/streams.mjs";
+import {
+    editChatParams,
+    chatParams,
+    getStreamParams,
+    getStreamBody,
+    generateBody,
+    chatBody,
+    docsBody,
+    newChatBody
+} from "./utils/inputSchema.mjs";
 
-const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 500,
-    chunkOverlap: 100,
-});
 
-export async function generateStream({ messages }, onsteps) {
-    const stream = await agent.stream({ messages }, {
-        streamMode: "messages",
-    });
+try {
+    await llmQueue.empty();
+} catch (err) {
+    console.error(err);
+}
 
-    if (stream == null) return;
-    
-    for await (let step of stream) {
-        const data = step[0];
+export const newChat = async (req, res) => {
+    const body = newChatBody.safeParse(req.body);
 
-        if (data.type == 'ai')
-            onsteps(data.content);
+    if (!body.success)
+        return res.status(400).send({ message: "Bad request" });
+
+    try {
+        const { title } = body.data;
+        let chatBox = await createChatBox({
+            idUser: req.user.id,
+            title
+        });
+
+        if (!chatBox) return res.status(500).send({ message: "Chatbox creation failed." });
+
+        return res.status(201).send({ id: chatBox.dataValues.id });
+    } catch (err) {
+        return res.status(500).send({ message: "Internal Error" });
+    }
+};
+
+const nonceCheck = async (nonce, jobId) => {
+    try {
+        const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${nonce}`));
+        const encoded = Array.from(new Uint8Array(hash)).map((d) => (d.toString(16).padStart(2, "0"))).join("");
+        
+        if (encoded != jobId)
+            return (null);
+        return (encoded);
+    } catch (err) {
+        console.error(err);
+        return (null);
     }
 }
 
-export const loadDocument = async (req, res) => {
-    const { name, url } = req.body;
+export const getStream = async (req, res) => {
+    const body = getStreamBody.safeParse(req.body);
+    const params = getStreamParams.safeParse(req.params);
 
-    if (!url)
-        return res.status(400).send({ message: "Bad request" });
+    if (!body.success || !params.success)
+        return res.status(400).end("Bad request.\n\n");
+
     try {
-        const docs = await loadWebPage(url, "p");
+        const { nonce } = body.data;
+        const { jobId } = params.data;
+        const job = await llmQueue.getJob(jobId);
+        
+        if (!job)
+            return res.status(404).end(JSON.stringify({message: "Job not found."}));
+    
+        const encoded = await nonceCheck(nonce, jobId);
+    
+        if (!encoded)
+            return res.status(401).end(JSON.stringify({message:"Bad nonce."}));
+        
+        const jobStatus = await job.getState();
+        
+        if (jobStatus != 'waiting' && jobStatus != 'active') {
+            await job.remove();
+            return res.status(500).end(JSON.stringify({message: "Job failed."}));
+        }
+        
+        registerStream(jobId, res);
 
-        if (docs.length == 0)
-            return res.status(404).send({ message: "Loading page failed!" });
+        markStreamReady(jobId);
 
-        const allSplits = await splitter.splitDocuments(docs);
-
-        await vectorStore.addDocuments(allSplits);
-
-        return res.status(201).send({ message: "success", allSplits });
+        req.on("close", () => {
+            console.log("Client disconnected");
+            deleteStream(jobId);
+        });
     } catch (err) {
         console.error(err);
+        return res.status(500).end(JSON.stringify({message: "Internal Error."}));
+    }
+}
+
+export const generate = async (req, res) => {
+    const body = generateBody.safeParse(req.body);
+
+    if (!body.success || !body.data.messages.length)
+        return res.status(400).send({ message: "Bad request." });
+
+    try {
+        const { messages, nonce } = body.data;
+        const j = await llmQueue.add({
+            handler: "handleGenerate",
+            params: {
+                messages,
+                nonce
+            }
+        }, {
+            jobId: nonce,
+            removeOnComplete: true,
+            removeOnFail: true,
+        });
+
+        return res.send({ jobId: j.id });
+    } catch (err) {
         return res.status(500).send({ message: "Internal Error" });
     }
 };
 
-export const newChat = async (req, res) => {
-    const { title } = req.body;
+export const postChat = async (req, res) => {
+    const body = chatBody.safeParse(req.body);
+    const params = chatParams.safeParse(req.params);
 
-    if (!title)
-        return res.status(400).send({ message: "Bad request." });
-    try {
-        let chatBox = ChatBox.build({
-            idUser: req.user.id,
-            title,
-        });
-        chatBox = await chatBox.save();
-        return res.status(201).send({ id: chatBox.dataValues.id });
-    } catch (err) {
-        console.error(err);
-        return res.status(500).send({ message: "Internal Error" });
-    }
-};
-
-export const generate =  async (req, res) => {
-    const { messages } = req.body;
-
-    if (!messages || !messages.length)
+    if (!body.success || !params.success)
         return res.status(400).send({ message: "Bad request." });
 
     try {
-        await generateStream({ messages }, (data) => {
-            res.write(data);
-        });
-        return res.end("\n\n");
-    } catch (err) {
-        console.error(err);
-        return res.status(500).end("\n\n");
-    }
-};
+        const { content, nonce } = body.data;
+        const { id } = params.data;
 
-export const postChat =  async (req, res) => {
-    const { content } = req.body;
-    const { id } = req.params;
-
-    if (!content)
-        return res.status(400).send({ message: "Bad request." });
-
-    try {
-        let chatBox = await ChatBox.findByPk(id);
+        const chatBox = await ChatBox.findByPk(id);
 
         if (!chatBox || chatBox.dataValues.idUser != req.user.id)
             return res.status(404).send({ message: "Chat history not found." })
-        let userMessage = ChatMessage.build({
-            ...{ role: "user", content },
-            ChatBoxId: chatBox.dataValues.id
-        });
-        await userMessage.save();
-        let buffer = { role: "assistant", content: "" }
-        const messages = await ChatMessage.findAll({
-            where: {
-                ChatBoxId: id,
-                role: {
-                    [Op.not]: "tool"
-                }
+
+        const messages = (await readChatMessage(id)).map((value) => ({
+            role: value.dataValues.role,
+            content: value.dataValues.content
+        }));
+        
+        if (messages.length > 0 && messages[messages.length - 1].role == "user")
+            return res.status(400).send({ message: "Waiting for llm response." })
+            
+        const msg = await createChatMessage({ id, content, role: "user" });
+
+        const j = await llmQueue.add({
+            handler: "handlePostChat",
+            params: {
+                messages: [...messages, { 
+                    role: msg.dataValues.role,
+                    content: msg.dataValues.content
+                }],
+                chatBoxId: id,
+                nonce,
             }
+        }, {
+            jobId: nonce,
+            removeOnComplete: true,
+            removeOnFail: true,
         });
-        await generateStream({
-            messages: messages.map((value) => ({
-                role: value.dataValues.role,
-                content: value.dataValues.content
-            })),
-        }, async (data) => {
-            buffer.content += data;
-            res.write(data);
-        });
-        let message = ChatMessage.build({
-            ...buffer,
-            ChatBoxId: chatBox.dataValues.id,
-            thinking: null
-        });
-        await message.save();
-        return res.end('\n\n');
+
+        return res.send({ jobId: j.id });
     } catch (err) {
         console.error(err);
-        return res.status(500).send({ message: "Internal Error" });
+        return res.status(500).send({ message: "Internal Error\n\n" });
     }
 };
 
-export const getChatboxes =  async (req, res) => {
+export const getChatboxes = async (req, res) => {
     try {
-        let chatBoxes = await ChatBox.findAll({
-            where: {
-                idUser: req.user.id
-            }
-        });
+        let chatBoxes = await readChatBox(req.user.id);
 
         return res.send(chatBoxes);
     } catch (err) {
-        console.error(err);
-        return res.status(500).send({ message: "Internal Error" });
+        return res.status(500).send({ message: "Internal Error", err });
     }
 };
 
-export const getChatHistory =  async (req, res) => {
-    const { id } = req.params;
+export const getChatHistory = async (req, res) => {
+    const params = chatParams.safeParse(req.params);
 
+    if (!params.success)
+        return res.status(400).send({ message: "Bad request." });
     try {
-        let chatBox = await ChatBox.findByPk(id);
+        const { id } = params.data;
+        const chatBox = await ChatBox.findByPk(id);
+
         if (!chatBox || chatBox.dataValues.idUser != req.user.id)
             return res.status(404).send({ message: "History not found." });
-        let chatMessage = await ChatMessage.findAll({
-            where: {
-                ChatBoxId: id
-            }
-        });
-        return res.status(200).send(chatMessage);
+
+        const messages = (await readChatMessage(id)).map((value) => ({
+            id: value.dataValues.id,
+            role: value.dataValues.role,
+            content: value.dataValues.content
+        }));
+
+        return res.status(200).send(messages);
     } catch (err) {
         console.error(err);
         return res.status(500).send({ message: "Internal Error" });
     }
 };
 
-
 export const editChat = async (req, res) => {
-    const { content } = req.body;
-    const { id, msgId } = req.params;
+    const body = chatBody.safeParse(req.body);
+    const params = editChatParams.safeParse(req.params);
 
-    if (!content)
+    if (!body.success || !params.success)
         return res.status(400).send({ message: "Bad request." });
 
     try {
+        const { content, nonce } = body.data;
+        const { id, msgId } = params.data;
+
         let chatBox = await ChatBox.findByPk(id);
         let userMsg = await ChatMessage.findByPk(msgId);
 
         if (!chatBox || !userMsg || chatBox.dataValues.idUser != req.user.id)
-            return res.status(404).send({message:  `Chat ${(!userMsg) ? "message" : "history"} not found.` })
+            return res.status(404).send({ message: `Chat ${(!userMsg) ? "message" : "history"} not found.` })
 
-        await ChatMessage.update(
-            { role: "user", content },
-            {
-                where: {
-                    id: msgId,
-                },
-            },
-        );
-        let buffer = { role: "assistant", content: "" }
-        const messages = await ChatMessage.findAll({
-            where: {
-                ChatBoxId: id,
-                role: {
-                    [Op.not]: "tool"
-                },
-                createdAt: {
-                    [Op.lte]: userMsg.dataValues.createdAt, 
-                }
+        await updateChatMessage({ content, msgId });
+
+        const messages = (await readChatMessage(id, {
+            createdAt: {
+                [Op.lte]: userMsg.dataValues.createdAt,
             }
+        })).map((value) => ({
+            role: value.dataValues.role,
+            content: value.dataValues.content
+        }));
+
+        const llmMsg = await readChatMessage(id, {
+            id: {
+                [Op.gt]: msgId,
+            }
+        }, 1);
+
+        const j = await llmQueue.add({
+            handler: "handleEditChat",
+            params: {
+                messages,
+                chatBoxId: id,
+                llmMsg,
+                msgId,
+                nonce,
+            }
+        }, {
+            jobId: nonce,
+            removeOnComplete: true,
+            removeOnFail: true,
         });
-        const llmMsg = await ChatMessage.findAll({
-            where: {
-                ChatBoxId: id,
-                role: {
-                    [Op.not]: "tool"
-                },
-                id: {
-                    [Op.gt]: userMsg.dataValues.id,
-                },
-            },
-            limit: 1
-        });
-        await generateStream({
-            messages: messages.map((value) => ({
-                role: value.dataValues.role,
-                content: value.dataValues.content
-            })),
-        }, async (data) => {
-            buffer.content += data;
-            res.write(data);
-        });
-        if (llmMsg.length == 0) {
-            let message = ChatMessage.build({
-                ...buffer,
-                ChatBoxId: chatBox.dataValues.id,
-                thinking: null
-            });
-            await message.save();
-            return res.end('\n\n');
-        }
-        await ChatMessage.update(
-            buffer,
-            {
-                where: {
-                    id: llmMsg[0].dataValues.id,
-                },
-            },
-        );
-        return res.end('\n\n');
+
+        return res.send({ jobId: j.id });
     } catch (err) {
-        console.error(err);
         return res.status(500).send({ message: "Internal Error" });
     }
-    return res.send({ message: "Updated!" });
 };
 
-export const deleteHistory =  async (req, res) => {
+export const deleteHistory = async (req, res) => {
+    const params = chatParams.safeParse(req.params);
+
     try {
-        const { id } = req.params;
+        const { id } = params.data;
 
         let chatBox = await ChatBox.findByPk(id);
-        
+
         if (!chatBox || chatBox.dataValues.idUser != req.user.id)
             return res.status(404).send({ message: "History not found." });
         await chatBox.destroy();
         return res.status(201).send({ message: `Chatbox (${id}) deleted` });
     } catch (err) {
-        console.error(err);
-        return res.status(500).send({ err });
+        return res.status(500).send({ message: "Internal error", err });
     }
     return res.send({ message: "History Deleted!" });
 };

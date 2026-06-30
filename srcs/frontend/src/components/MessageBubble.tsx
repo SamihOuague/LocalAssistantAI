@@ -10,6 +10,8 @@
 /*                                                                            */
 /* ************************************************************************** */
 
+import Markdown from "react-markdown"
+
 interface MessageBubbleProps {
     content: string;
     role: "user" | "assistant";
@@ -21,7 +23,10 @@ function MessageBubble({
 }: MessageBubbleProps) {
     return (
         <div className={role === "user" ? "message user-message" : "message assistant-message"}>
-            {content} 
+            {(role === "user") ? content :
+            <Markdown>
+                {content}
+            </Markdown>}
         </div>
     );
 }

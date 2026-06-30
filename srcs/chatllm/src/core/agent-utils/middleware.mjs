@@ -1,22 +1,27 @@
-import { openAi, vllm, ollm } from "./models.mjs";
+import { gllm, ollm } from "./models.mjs";
 import { createMiddleware } from "langchain";
 import { agentRouter } from "./SemanticRouter.mjs";
 
 export const dynamicModelSelection = createMiddleware({
-  name: "DynamicModelSelection",
-  wrapModelCall: async (request, handler) => {
-    const messageCount = request.messages.length;
-    const r = await agentRouter.classify(request.messages[messageCount - 1]);
+	name: "DynamicModelSelection",
+	wrapModelCall: async (request, handler) => {
+		const messageCount = request.messages.length;
 
-    if (r && r.name == "complex") {
-      return handler({
-        ...request,
-        model: (!process.env.OPENAI_URL) ? ollm : openAi,
-      });
-    }
-    return handler({
-      ...request,
-      model: ollm
-    });
-  },
+		if (messageCount > 0)
+		{
+			const msg = request.messages[messageCount - 1];
+			const r = await agentRouter.classify(msg);
+
+			if (r && r.name != "simple") {
+				return handler({
+					...request,
+					model: gllm,
+				});
+			}
+		}
+		return handler({
+			...request,
+			model: ollm
+		});
+	},
 });

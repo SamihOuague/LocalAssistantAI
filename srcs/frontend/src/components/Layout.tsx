@@ -12,18 +12,23 @@
 
 import Navbar from "./Navbar";
 import Footer from "./Footer";
+import { useLocation } from "react-router-dom";
+
 interface Props {
     children: React.ReactNode;
 }
+
 function Layout({ children }: Props) {
-    return (
-        <>
-            <Navbar />
-            <main className="content">
-                {children}
-            </main>
-            <Footer />
-        </>
+	const location = useLocation();
+
+	return (
+		<div className="d-flex flex-column justyfy-content-center min-vh-100">
+			{(location.pathname !== "/chat") && <Navbar />}
+			<main className="flex-grow-1 d-flex justify-content-center align-items-center">
+				{children}
+			</main>
+			{(location.pathname !== "/chat") && <Footer />}
+		</div>
     );
 }
 export default Layout;

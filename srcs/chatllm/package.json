@@ -14,14 +14,17 @@
     "@elastic/elasticsearch": "^8.19.1",
     "@langchain/community": "^1.1.28",
     "@langchain/core": "^1.1.47",
+    "@langchain/google": "^0.2.1",
     "@langchain/ollama": "^1.2.7",
     "@langchain/openai": "^1.4.6",
     "@langchain/textsplitters": "^1.0.1",
+    "bull": "^4.16.5",
     "cheerio": "^1.2.0",
     "express": "^5.2.1",
     "jose": "^6.2.3",
     "langchain": "^1.4.2",
     "mariadb": "^3.5.2",
+    "redis": "^6.0.0",
     "sequelize": "^6.37.8"
   },
   "overrides": {

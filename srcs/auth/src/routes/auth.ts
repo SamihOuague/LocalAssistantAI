@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { Prisma, type PrismaClient } from '../generated/prisma/client.js';
 import { hashPassword } from '../auth/password.js';
@@ -6,6 +6,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { SignJWT, type CryptoKey } from 'jose';
 import { verifyPassword } from '../auth/password.js';
 import type { Encryptor } from '../auth/encryption.js';
+import { derivePresence } from '../presence/presence.js';
 import * as OTPAuth from 'otpauth';
 import { generateScratchCodes, normalizeScratchCode } from '../auth/scratch.js';
 import {
@@ -13,7 +14,11 @@ import {
   authenticateIntermediateToken,
   ACCESS_TOKEN_AUDIENCE,
   INTERMEDIATE_TOKEN_AUDIENCE,
+  COOKIE_NAME_2FA,
 } from '../auth/tokens.js';
+import { acceptedFriendsWhere } from '../friends/queries.js';
+import { detectImageMime } from '../auth/imageType.js';
+import multer, { MulterError } from 'multer';
 
 const DUMMY_HASH = '$argon2id$v=19$m=19456,t=2,p=1$ieXIovdukovEeGRKwvjIpQ$uSyvnWZF1zokmIt7DDWaJa2ifBxibtV+AbUOo29lJiA';
 
@@ -34,9 +39,17 @@ const OAUTH_42_ME_URL = 'https://api.intra.42.fr/v2/me';
 const TOTP_ISSUER = 'ft_transcendence';
 
 const INTERMEDIATE_TOKEN_TTL = '5m';
+const INTERMEDIATE_COOKIE_MAX_AGE_MS = 5 * 60 * 1000;
 
 const TOTP_MAX_FAILURES = 5;
 const TOTP_BLOCK_DURATION_MS = 15 * 60 * 1000;
+
+const AVATAR_MAX_BYTES = 1 * 1024 * 1024;
+
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: AVATAR_MAX_BYTES, files: 1 },
+}).single('avatar');
 
 class ConflictError extends Error {}
 
@@ -45,14 +58,15 @@ type RefreshOutcome =
   | { kind: 'rotated'; userId: string; newRawToken: string };
 
 type OAuthConfig = {
-  cookieSecret: string;
-  providers: {
-    fortyTwo: {
-      clientId: string;
-      clientSecret: string;
-      redirectUri: string;
-    };
-  };
+	cookieSecret: string;
+	frontendUrl: string;
+	providers: {
+		fortyTwo: {
+			clientId: string;
+			clientSecret: string;
+			redirectUri: string;
+		};
+	};
 };
 
 function hashToken(raw: string): string {
@@ -76,7 +90,7 @@ function isAllowedOrigin(req: Request, allowed: Set<string>): boolean {
 function setRefreshCookie(res: Response, rawToken: string): void {
 	res.cookie(COOKIE_NAME_REFRESH, rawToken, {
 	  httpOnly: true,
-	  sameSite: 'strict',
+	  sameSite: 'none',
 	  path: '/',
 	  maxAge: REFRESH_TOKEN_TTL_MS,
 	  secure: process.env.NODE_ENV === 'production',
@@ -87,10 +101,14 @@ function setRefreshCookie(res: Response, rawToken: string): void {
 function clearRefreshCookie(res: Response): void {
 	res.clearCookie(COOKIE_NAME_REFRESH, {
 	  httpOnly: true,
-	  sameSite: 'strict',
+	  sameSite: 'none',
 	  path: '/',
 	  secure: process.env.NODE_ENV === 'production',
 	});
+}
+
+function oauthErrorRedirect(res: Response, frontendUrl: string, code: string): void {
+	res.redirect(302, `${frontendUrl}/login?error=${code}`);
 }
 
 async function signAccessToken(userId: string, key: CryptoKey): Promise<string> {
@@ -131,14 +149,20 @@ async function issuePostAuthResponse(
 	const { rawToken, tokenHash } = generateRefreshToken();
 	const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
-	await prisma.refreshToken.create({
-		data: {
-		  userId: user.id,
-		  tokenHash,
-		  familyId: randomUUID(),
-		  expiresAt,
-		},
-	});
+	await prisma.$transaction([
+		prisma.refreshToken.create({
+			data: {
+			  userId: user.id,
+			  tokenHash,
+			  familyId: randomUUID(),
+			  expiresAt,
+			},
+		}),
+		prisma.user.update({
+		  where: { id: user.id },
+		  data: { isOnline: true, lastSeenAt: new Date() },
+		}),
+	]);
 
 	return { accessToken, refreshToken: rawToken };
 }
@@ -172,6 +196,10 @@ const registerSchema = z.object({
   email: z.email().max(255),
   username: z.string().min(3).max(32).regex(/^[A-Za-z0-9_-]+$/),
   password: z.string().min(8).max(128),
+});
+
+const updateMeSchema = z.object({
+  username: registerSchema.shape.username,
 });
 
 const loginSchema = z.object({
@@ -227,7 +255,10 @@ export function createAuthRouter(
 		try {
 			const user = await prisma.user.create({
 			  data: {email, username, passwordHash },
-			  omit: {passwordHash: true },
+			  omit: { passwordHash: true,
+    			  totpSecretEncrypted: true,
+    			  lastTotpStepConsumed: true,
+  		  	},
 		});
 		return res.status(201).json(user);
 		} catch(err) { 
@@ -373,10 +404,16 @@ export function createAuthRouter(
 			});
 			if (token !== null)
 			{
-				await prisma.refreshToken.updateMany({
-				  where: { familyId: token.familyId, revokedAt: null },
-				  data: { revokedAt: new Date() },
-				});
+				await prisma.$transaction([
+					prisma.refreshToken.updateMany({
+					  where: { familyId: token.familyId, revokedAt: null },
+					  data: { revokedAt: new Date() },
+					}),
+					prisma.user.update({
+					  where: { id: token.userId },
+					  data: { isOnline: false, lastSeenAt: new Date() },
+					}),
+				]);
 			}
 		}
 		clearRefreshCookie(res);
@@ -389,20 +426,159 @@ export function createAuthRouter(
 			return res.status(401).json({ error: 'invalid token' });
 		}
 
-		const user = await prisma.user.findUnique({
-		  where: { id: userId },
-		  omit: { passwordHash: true,
-    			  totpSecretEncrypted: true,
-    			  lastTotpStepConsumed: true,
-  		  },
-		});
+		const [user, friendCount] = await Promise.all([
+			prisma.user.findUnique({
+			  where: { id: userId },
+			  omit: { passwordHash: true,
+				  totpSecretEncrypted: true,
+				  lastTotpStepConsumed: true,
+			  },
+			}),
+			prisma.friendship.count({ where: acceptedFriendsWhere(userId) }),
+		]);
 
 		if (user === null)
 		{
-			return res.status(401).json({error: 'invalid token' });
+			return res.status(401).json({ error: 'invalid token' });
 		}
 
-		return res.status(200).json(user);
+		return res.status(200).json({
+		  ...user,
+		  isOnline: derivePresence(user.isOnline, user.lastSeenAt),
+		  friendCount,
+		});
+	});
+	router.patch('/me', async (req: Request, res: Response) => {
+		const userId = await authenticateRequest(req, publicKey);
+		if (userId === null)
+		{
+			return res.status(401).json({ error: 'invalid token' });
+		}
+
+		const parsed = updateMeSchema.safeParse(req.body);
+		if (!parsed.success)
+		{
+			return res.status(400).json({ error: 'invalid input' });
+		}
+
+		try
+		{
+			const user = await prisma.user.update({
+			  where: { id: userId },
+			  data: { username: parsed.data.username },
+			  omit: { passwordHash: true,
+				  totpSecretEncrypted: true,
+				  lastTotpStepConsumed: true,
+			  },
+			});
+				
+			const friendCount = await prisma.friendship.count({ where: acceptedFriendsWhere(userId) });
+
+			return res.status(200).json({
+			  ...user,
+			  isOnline: derivePresence(user.isOnline, user.lastSeenAt),
+			  friendCount,
+			});
+		}
+		catch (err)
+		{
+			if (err instanceof Prisma.PrismaClientKnownRequestError)
+			{
+				if (err.code === 'P2002')
+				{
+					return res.status(409).json({ error: 'username already in use' });
+				}
+				if (err.code === 'P2025')
+				{
+					return res.status(401).json({ error: 'invalid token' });
+				}
+			}
+			throw err;
+		}
+	});
+	router.put('/me/avatar', avatarUpload, async (req: Request, res: Response) => {
+		const userId = await authenticateRequest(req, publicKey);
+		if (userId === null)
+		{
+			return res.status(401).json({ error: 'invalid token' });
+		}
+		if (req.file === undefined)
+		{
+			return res.status(400).json({ error: 'no file uploaded' });
+		}
+		const mimeType = detectImageMime(req.file.buffer);
+		if (mimeType === null)
+		{
+			return res.status(400).json({ error: 'unsupported image type' });
+		}
+		const data = new Uint8Array(req.file.buffer);
+		const [user, friendCount] = await prisma.$transaction(async (tx) => {
+			await tx.avatar.upsert({
+			  where: { userId },
+			  create: { userId, data, mimeType },
+			  update: { data, mimeType },
+			});
+			const updated = await tx.user.update({
+			  where: { id: userId },
+			  data: { avatarUrl: `/auth/users/${userId}/avatar` },
+			  omit: { passwordHash: true,
+				  totpSecretEncrypted: true,
+				  lastTotpStepConsumed: true,
+			  },
+			});
+			const count = await tx.friendship.count({ where: acceptedFriendsWhere(userId) });
+			return [updated, count] as const;
+		});
+		return res.status(200).json({
+		  ...user,
+		  isOnline: derivePresence(user.isOnline, user.lastSeenAt),
+		  friendCount,
+		});
+	}, (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+		if (err instanceof MulterError)
+		{
+			if (err.code === 'LIMIT_FILE_SIZE')
+			{
+				return res.status(413).json({ error: 'file too large' });
+			}
+			return res.status(400).json({ error: 'invalid upload' });
+		}
+		return res.status(500).json({ error: 'upload failed' });
+	});
+	router.get('/users/:id/avatar', async (req: Request, res: Response) => {
+		const id = req.params.id;
+		if (typeof id !== 'string')
+		{
+			return res.status(400).json({ error: 'invalid user id' });
+		}
+		const avatar = await prisma.avatar.findUnique({
+		  where: { userId: id },
+		});
+		if (avatar === null)
+		{
+			return res.status(404).json({ error: 'avatar not found' });
+		}
+		res.setHeader('Content-Type', avatar.mimeType);
+		res.setHeader('X-Content-Type-Options', 'nosniff');
+		res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+		return res.status(200).send(Buffer.from(avatar.data));
+	});
+	router.post('/presence/heartbeat', async (req: Request, res: Response) => {
+		const userId = await authenticateRequest(req, publicKey);
+		if (userId === null)
+		{
+			return res.status(401).json({ error: 'invalid token' });
+		}
+
+		const result = await prisma.user.updateMany({
+		  where: { id: userId },
+		  data: { isOnline: true, lastSeenAt: new Date() },
+		});
+		if (result.count === 0)
+		{
+			return res.status(401).json({ error: 'invalid token' });
+		}
+		return res.status(204).send();
 	});
 	router.post('/2fa/setup', async (req: Request, res: Response) => {
 		const userId = await authenticateRequest(req, publicKey);
@@ -479,7 +655,16 @@ export function createAuthRouter(
 			return res.status(400).json({ error: 'no 2FA setup in progress' });
 		}
 
-		const secretBase32 = encryptor.decrypt(user.totpSecretEncrypted);
+		let secretBase32: string;
+		try
+		{
+			secretBase32 = encryptor.decrypt(user.totpSecretEncrypted);
+		}
+		catch (err)
+		{
+			console.error(`TOTP secret decrypt failed for user ${userId}:`, err);
+			return res.status(500).json({ error: 'could not verify 2FA, please try again' });
+		}
 		const totp = new OTPAuth.TOTP({
 		  issuer: TOTP_ISSUER,
 		  label: user.email,
@@ -524,8 +709,17 @@ export function createAuthRouter(
 		{
 			return res.status(409).json({ error: '2FA is not enabled' });
 		}
-
-		const secretBase32 = encryptor.decrypt(user.totpSecretEncrypted);
+		
+		let secretBase32: string;
+		try
+		{
+			secretBase32 = encryptor.decrypt(user.totpSecretEncrypted);
+		}
+		catch (err)
+		{
+			console.error(`TOTP secret decrypt failed for user ${userId}:`, err);
+			return res.status(500).json({ error: 'could not verify 2FA, please try again' });
+		}
 		const totp = new OTPAuth.TOTP({
 		  issuer: TOTP_ISSUER,
 		  label: user.email,
@@ -579,7 +773,16 @@ export function createAuthRouter(
 			return res.status(409).json({ error: '2FA is not enabled' });
 		}
 
-		const secretBase32 = encryptor.decrypt(user.totpSecretEncrypted);
+		let secretBase32: string;
+		try
+		{
+			secretBase32 = encryptor.decrypt(user.totpSecretEncrypted);
+		}
+		catch (err)
+		{
+			console.error(`TOTP secret decrypt failed for user ${userId}:`, err);
+			return res.status(500).json({ error: 'could not verify 2FA, please try again' });
+		}
 		const totp = new OTPAuth.TOTP({
 		  issuer: TOTP_ISSUER,
 		  label: user.email,
@@ -636,7 +839,17 @@ export function createAuthRouter(
 
 		if (totpParsed.success)
 		{
-			const secretBase32 = encryptor.decrypt(user.totpSecretEncrypted);
+			let secretBase32: string;
+			try
+			{
+				secretBase32 = encryptor.decrypt(user.totpSecretEncrypted);
+			}
+			catch (err)
+			{
+				console.error(`TOTP secret decrypt failed for user ${userId}:`, err);
+				return res.status(401).json({ error: 'invalid code' });
+			}
+
 			const totp = new OTPAuth.TOTP({
 			  issuer: TOTP_ISSUER,
 			  label: user.email,
@@ -661,7 +874,11 @@ export function createAuthRouter(
 					await prisma.$transaction([
 						prisma.user.update({
 						  where: { id: userId },
-						  data: { lastTotpStepConsumed: BigInt(validatedStep) },
+						  data: {
+						    lastTotpStepConsumed: BigInt(validatedStep),
+						    isOnline: true,
+						    lastSeenAt: new Date(),
+						  },
 						}),
 						prisma.refreshToken.create({
 						  data: {
@@ -672,8 +889,9 @@ export function createAuthRouter(
 						  },
 						}),
 					]);
-
+					
 					clearFailures(userId);
+					res.clearCookie(COOKIE_NAME_2FA, { path: '/' });
 					setRefreshCookie(res, rawToken);
 					return res.status(200).json({ accessToken });
 				}
@@ -697,16 +915,23 @@ export function createAuthRouter(
 				const { rawToken, tokenHash } = generateRefreshToken();
 				const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
-				await prisma.refreshToken.create({
-					data: {
-					  userId,
-					  tokenHash,
-					  familyId: randomUUID(),
-					  expiresAt,
-					},
-				});
+				await prisma.$transaction([
+					prisma.refreshToken.create({
+						data: {
+						  userId,
+						  tokenHash,
+						  familyId: randomUUID(),
+						  expiresAt,
+						},
+					}),
+					prisma.user.update({
+					  where: { id: userId },
+					  data: { isOnline: true, lastSeenAt: new Date() },
+					}),
+				]);
 
 				clearFailures(userId);
+				res.clearCookie(COOKIE_NAME_2FA, { path: '/' });
 				setRefreshCookie(res, rawToken);
 				return res.status(200).json({ accessToken });
 			}
@@ -737,150 +962,169 @@ export function createAuthRouter(
   		return res.redirect(302, authorizeUrl.toString());
 	});
 	router.get('/oauth/42/callback', async (req: Request, res: Response) => {
-  		const parsed = callbackQuerySchema.safeParse(req.query);
-  		if (!parsed.success)
+		const parsed = callbackQuerySchema.safeParse(req.query);
+		if (!parsed.success)
 		{
-  			return res.status(400).json({ error: 'invalid callback parameters' });
-  		}
-  		const { code, state: stateFromUrl, error: oauthError, error_description } = parsed.data;
+			console.error('OAuth callback: invalid callback parameters', parsed.error.issues);
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+		const { code, state: stateFromUrl, error: oauthError, error_description } = parsed.data;
 
-  		const stateFromCookie = req.signedCookies[COOKIE_NAME_OAUTH_42_STATE];
-  		res.clearCookie(COOKIE_NAME_OAUTH_42_STATE, { path: '/' });
-	
-	  	if (stateFromCookie === undefined)
+		const stateFromCookie = req.signedCookies[COOKIE_NAME_OAUTH_42_STATE];
+		res.clearCookie(COOKIE_NAME_OAUTH_42_STATE, { path: '/' });
+
+		if (stateFromCookie === undefined)
 		{
-	    		return res.status(401).json({ error: 'missing oauth state cookie' });
-	  	}
-	  	if (stateFromCookie === false)
+			console.error('OAuth callback: missing state cookie');
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+		if (stateFromCookie === false)
 		{
-	    		return res.status(401).json({ error: 'tampered oauth state cookie' });
-	  	}
-	  	if (stateFromCookie !== stateFromUrl)
+			console.error('OAuth callback: tampered state cookie');
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+		if (stateFromCookie !== stateFromUrl)
 		{
-    			return res.status(401).json({ error: 'oauth state mismatch' });
-  		}
-	
-	  	if (oauthError !== undefined)
+			console.error('OAuth callback: state mismatch');
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+
+		if (oauthError !== undefined)
 		{
-			return res.status(400).json({
-    			  error: '42 OAuth error',
-    			  detail: oauthError,
-    			  description: error_description ?? null,
-    			});
-  		}
-  		if (code === undefined)
+			if (oauthError === 'access_denied')
+			{
+				return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_denied');
+			}
+			console.error(`OAuth callback: 42 returned error "${oauthError}"`, error_description ?? '');
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+		if (code === undefined)
 		{
-    			return res.status(400).json({ error: 'missing code parameter' });
-  		}
+			console.error('OAuth callback: missing code parameter');
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
 
 		const tokenRequestBody = new URLSearchParams({
-  		  grant_type: 'authorization_code',
-  		  client_id: oauth.providers.fortyTwo.clientId,
-  		  client_secret: oauth.providers.fortyTwo.clientSecret,
-  		  code,
-  		  redirect_uri: oauth.providers.fortyTwo.redirectUri,
-  		});
-	
-	  	const tokenResponse = await fetch(OAUTH_42_TOKEN_URL, {
-	  	  method: 'POST',
-	  	  body: tokenRequestBody,
-	  	});
-	  	if (!tokenResponse.ok)
+		  grant_type: 'authorization_code',
+		  client_id: oauth.providers.fortyTwo.clientId,
+		  client_secret: oauth.providers.fortyTwo.clientSecret,
+		  code,
+		  redirect_uri: oauth.providers.fortyTwo.redirectUri,
+		});
+
+		const tokenResponse = await fetch(OAUTH_42_TOKEN_URL, {
+		  method: 'POST',
+		  body: tokenRequestBody,
+		});
+		if (!tokenResponse.ok)
 		{
-	  		return res.status(502).json({ error: 'failed to exchange code for token' });
-	  	}
-	  	const tokenParsed = tokenResponseSchema.safeParse(await tokenResponse.json());
-	  	if (!tokenParsed.success)
+			console.error(`OAuth callback: token exchange failed (${tokenResponse.status})`);
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+		const tokenParsed = tokenResponseSchema.safeParse(await tokenResponse.json());
+		if (!tokenParsed.success)
 		{
-	    		return res.status(502).json({ error: 'invalid token response from 42' });
-	  	}
-	  	const accessToken42 = tokenParsed.data.access_token;
-	
-	  	const meResponse = await fetch(OAUTH_42_ME_URL, {
-	  	  headers: { Authorization: `Bearer ${accessToken42}` },
-	  	});
-	  	if (!meResponse.ok)
+			console.error('OAuth callback: invalid token response from 42');
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+		const accessToken42 = tokenParsed.data.access_token;
+
+		const meResponse = await fetch(OAUTH_42_ME_URL, {
+		  headers: { Authorization: `Bearer ${accessToken42}` },
+		});
+		if (!meResponse.ok)
 		{
-	    		return res.status(502).json({ error: 'failed to fetch profile from 42' });
-	  	}
-	  	const meParsed = meResponseSchema.safeParse(await meResponse.json());
-	  	if (!meParsed.success)
+			console.error(`OAuth callback: profile fetch failed (${meResponse.status})`);
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+		const meParsed = meResponseSchema.safeParse(await meResponse.json());
+		if (!meParsed.success)
 		{
-	    		return res.status(502).json({ error: 'invalid profile response from 42' });
-	  	}
-	  	const { id: fortyTwoId, email: fortyTwoEmail, login: fortyTwoLogin } = meParsed.data;
-	  	const providerId = String(fortyTwoId);
-	  
+			console.error('OAuth callback: invalid profile response from 42');
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
+		}
+		const { id: fortyTwoId, email: fortyTwoEmail, login: fortyTwoLogin } = meParsed.data;
+		const providerId = String(fortyTwoId);
+
 		let userId: string;
-	
-	  	const existingOAuth = await prisma.oAuthAccount.findUnique({
-	  	  where: { provider_providerId: { provider: '42', providerId } },
-  		});
-	
-  		if (existingOAuth !== null)
+
+		const existingOAuth = await prisma.oAuthAccount.findUnique({
+		  where: { provider_providerId: { provider: '42', providerId } },
+		});
+
+		if (existingOAuth !== null)
 		{
-	    		userId = existingOAuth.userId;
-	  	}
+			userId = existingOAuth.userId;
+		}
 		else
 		{
-	    		const existingUser = await prisma.user.findUnique({
-	    		  where: { email: fortyTwoEmail },
-	    		});
-	
-	    		if (existingUser !== null)
+			const existingUser = await prisma.user.findUnique({
+			  where: { email: fortyTwoEmail },
+			});
+
+			if (existingUser !== null)
 			{
-	      			await prisma.oAuthAccount.create({
-	      			  data: { userId: existingUser.id, provider: '42', providerId },
-	      			});
-	      			userId = existingUser.id;
-	    		}
+				await prisma.oAuthAccount.create({
+				  data: { userId: existingUser.id, provider: '42', providerId },
+				});
+				userId = existingUser.id;
+			}
 			else
 			{
-	      			try
+				try
 				{
-	        			const newUser = await prisma.user.create({
-	        			  data: { email: fortyTwoEmail, username: fortyTwoLogin },
-	        			});
-	        			await prisma.oAuthAccount.create({
-       		 			  data: { userId: newUser.id, provider: '42', providerId },
-        				});
-        				userId = newUser.id;
-      				}
+					const newUser = await prisma.user.create({
+					  data: { email: fortyTwoEmail, username: fortyTwoLogin },
+					});
+					await prisma.oAuthAccount.create({
+					  data: { userId: newUser.id, provider: '42', providerId },
+					});
+					userId = newUser.id;
+				}
 				catch (err)
 				{
-        				if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
+					if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
 					{
-        	  				const newUser = await prisma.user.create({
-	       	  				  data: { email: fortyTwoEmail, username: `${fortyTwoLogin}-${providerId}` },
-	          				});
-	          				await prisma.oAuthAccount.create({
-	          				  data: { userId: newUser.id, provider: '42', providerId },
-	          				});
-	          				userId = newUser.id;
-	        			}
+						const newUser = await prisma.user.create({
+						  data: { email: fortyTwoEmail, username: `${fortyTwoLogin}-${providerId}` },
+						});
+						await prisma.oAuthAccount.create({
+						  data: { userId: newUser.id, provider: '42', providerId },
+						});
+						userId = newUser.id;
+					}
 					else
 					{
-	          				throw err;
-	        			}
-	      			}
-	    		}
-	  	}
+						throw err;
+					}
+				}
+			}
+		}
 		const user = await prisma.user.findUnique({
 		  where: { id: userId },
 		  select: { id: true, totpEnabled: true },
 		});
 		if (user === null)
 		{
-		    return res.status(500).json({ error: 'user vanished during oauth flow' });
+			console.error(`OAuth callback: user ${userId} vanished during oauth flow`);
+			return oauthErrorRedirect(res, oauth.frontendUrl, 'oauth_failed');
 		}
 
 		const result = await issuePostAuthResponse(user, prisma, privateKey);
 		if ('requires2fa' in result)
 		{
-			return res.status(200).json(result);
+			res.cookie(COOKIE_NAME_2FA, result.intermediateToken, {
+			  httpOnly: true,
+			  sameSite: 'none',
+			  path: '/',
+			  maxAge: INTERMEDIATE_COOKIE_MAX_AGE_MS,
+			  secure: process.env.NODE_ENV === 'production',
+			  signed: false,
+			});
+			return res.redirect(302, `${oauth.frontendUrl}/login?2fa=1`);
 		}
 		setRefreshCookie(res, result.refreshToken);
-		return res.status(200).json({ accessToken: result.accessToken });
+		return res.redirect(302, oauth.frontendUrl);
 	});
 	return router;
 }

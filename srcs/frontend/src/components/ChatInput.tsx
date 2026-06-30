@@ -9,25 +9,36 @@
 /*   Updated: 2026/06/02 19:30:46 by odile            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
-type ChatInputProps = {
-  setMessage: (message: string) => void;
-  postMessage: () => void;
-  message: string;
-};
 
-function ChatInput({ setMessage, postMessage, message }: ChatInputProps) {
-
-    const handleChange = (e: any) => {
-        setMessage(e.target.value);
-    }
-
-    return ( 
-        <div className="chat-input-container"> 
-            <input onChange={handleChange} value={message} type="text" placeholder="Écrivez votre message..."/>
-            <button onClick={() => postMessage()}>
-                Envoyer
-            </button>
+function ChatInput({ message, setMessage, loading, handlePostMessage }: any) {
+    return (
+        <div className="border-top border-dark d-flex justify-content-center"
+            style={{ flex: 2 }}>
+            <div className="border border-dark flex-grow-1 m-5 rounded-5 p-2 d-flex align-items-center"
+                style={{ backgroundColor: "#111929" }}>
+                <div className="flex-grow-1 h-100 d-flex align-items-center">
+                    <textarea
+                        className="form-control border-0 bg-transparent text-white-50 shadow-none"
+                        placeholder="Envoyer un message..."
+                        style={{ resize: "none" }}
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        rows={1}
+                        onKeyDown={(e) => {
+                            if (e.code == "Enter") {
+                                e.preventDefault();
+                                handlePostMessage();
+                            }
+                        }}
+                    />
+                </div>
+                <button disabled={loading || !message.trim().length} className="btn btn-primary rounded-pill d-flex justify-content-center align-items-center"
+                        onClick={() => handlePostMessage()}>
+                    <i className="bi bi-send m-2 fs-5"></i>
+                </button>
+            </div>
         </div>
+
     );
 }
 export default ChatInput;

@@ -1,4 +1,3 @@
-
 export const isAuth = async (req, res, next) => {
     try {
         const response = await fetch("http://auth:3001/me", {

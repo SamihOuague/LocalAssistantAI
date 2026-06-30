@@ -1,32 +1,295 @@
 {
-  "openapi": "3.0.0",
+  "openapi": "3.0.3",
   "info": {
-    "title": "ChatLLM API",
+    "title": "ft_transcendence API",
+    "description": "Authentication + 2FA + OAuth + ChatLLM (RAG + streaming + chat history)",
     "version": "1.0.0"
   },
+  "servers": [
+    {
+      "url": "https://api.ft_transcendence/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Registration, login, logout, token refresh"
+    },
+    {
+      "name": "2FA",
+      "description": "Two-factor authentication (TOTP)"
+    },
+    {
+      "name": "OAuth",
+      "description": "42 School OAuth2 flow"
+    },
+    {
+      "name": "LLM",
+      "description": "Raw LLM generation (streaming)"
+    },
+    {
+      "name": "Chat",
+      "description": "Chat sessions and message history"
+    },
+    {
+      "name": "RAG",
+      "description": "Retrieval-Augmented Generation \u2013 document indexing"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "Unauthorized"
+          },
+          "message": {
+            "type": "string",
+            "example": "Invalid or expired token"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "uuid-1234"
+          },
+          "email": {
+            "type": "string",
+            "example": "alice@42.fr"
+          },
+          "username": {
+            "type": "string",
+            "example": "alice"
+          },
+          "twoFaEnabled": {
+            "type": "boolean",
+            "example": false
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TokenPair": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "example": "eyJhbGci..."
+          },
+          "refreshToken": {
+            "type": "string",
+            "example": "eyJhbGci..."
+          },
+          "expiresIn": {
+            "type": "integer",
+            "example": 900
+          }
+        }
+      },
+      "ChatBox": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "chat-uuid-5678"
+          },
+          "title": {
+            "type": "string",
+            "example": "My first chat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "msg-uuid-9012"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "example": "user"
+          },
+          "content": {
+            "type": "string",
+            "example": "What is the subject of this doc?"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TwoFaChallenge": {
+        "type": "object",
+        "properties": {
+          "twoFaRequired": {
+            "type": "boolean",
+            "example": true
+          },
+          "tempToken": {
+            "type": "string",
+            "example": "eyJhbGci..."
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid JWT",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Invalid request body or parameters",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Resource already exists",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
   "paths": {
-    "/generate": {
+    "/auth/register": {
       "post": {
-        "summary": "Send message to LLM",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "summary": "Register a new user",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "email",
+                  "username",
+                  "password"
+                ],
                 "properties": {
-                  "messages": {
-                    "type": "array",
-                    "items": {
-                      "properties": {
-                        "role": {
-                          "type": "string"
-                        },
-                        "content": {
-                          "type": "string"
-                        }
-                      }
-                    }
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "alice@42.fr"
+                  },
+                  "username": {
+                    "type": "string",
+                    "minLength": 3,
+                    "example": "alice"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "example": "S3cur3P@ss!"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "summary": "Login \u2013 returns tokens or triggers 2FA step",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "alice@42.fr"
+                  },
+                  "password": {
+                    "type": "string",
+                    "example": "S3cur3P@ss!"
                   }
                 }
               }
@@ -35,37 +298,773 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "Login successful \u2014 token pair or 2FA required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "Token pair on success, or 2FA challenge if 2FA is enabled",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string",
+                      "example": "eyJhbGci..."
+                    },
+                    "refreshToken": {
+                      "type": "string",
+                      "example": "eyJhbGci..."
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "example": 900
+                    },
+                    "twoFaRequired": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "tempToken": {
+                      "type": "string",
+                      "example": "eyJhbGci..."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
     },
-    "/new-chat": {
-      "post": {
-        "summary": "Create a new chatbox"
-      }
-    },
-    "/chat/:id": {
-      "post": {
-        "summary": "Post a new prompt in the history and generate response from LLM"
-      }
-    },
-    "/chat": {
+    "/auth/me": {
       "get": {
-        "summary": "List of chatboxes histories"
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get the currently authenticated user",
+        "responses": {
+          "200": {
+            "description": "Current user data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
       }
     },
-    "/history/:id": {
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "summary": "Refresh access token using refresh token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "example": "eyJhbGci..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New access token issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Logout \u2013 invalidates the refresh token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refreshToken"
+                ],
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "example": "eyJhbGci..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successfully logged out"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/2fa/setup": {
+      "post": {
+        "tags": [
+          "2FA"
+        ],
+        "summary": "Generate a TOTP secret and QR code URI",
+        "responses": {
+          "200": {
+            "description": "TOTP setup payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "secret": {
+                      "type": "string",
+                      "example": "JBSWY3DPEHPK3PXP"
+                    },
+                    "otpauthUrl": {
+                      "type": "string",
+                      "example": "otpauth://totp/ft_transcendence:alice?secret=..."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/2fa/enable": {
+      "post": {
+        "tags": [
+          "2FA"
+        ],
+        "summary": "Enable 2FA by verifying the first TOTP code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "example": "123456",
+                    "description": "6-digit TOTP code"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "2FA enabled successfully"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/2fa/disable": {
+      "post": {
+        "tags": [
+          "2FA"
+        ],
+        "summary": "Disable 2FA by verifying current TOTP code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "example": "123456"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "2FA disabled successfully"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/login/2fa": {
+      "post": {
+        "tags": [
+          "2FA"
+        ],
+        "security": [],
+        "summary": "Complete login with 2FA TOTP code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tempToken",
+                  "code"
+                ],
+                "properties": {
+                  "tempToken": {
+                    "type": "string",
+                    "example": "eyJhbGci...",
+                    "description": "Temporary token from /auth/login"
+                  },
+                  "code": {
+                    "type": "string",
+                    "example": "123456"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "2FA validated \u2013 full token pair",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/oauth/42": {
       "get": {
-        "summary": "Get the history chatbox."
+        "tags": [
+          "OAuth"
+        ],
+        "security": [],
+        "summary": "Redirect browser to 42 School OAuth2 authorization page",
+        "responses": {
+          "302": {
+            "description": "Redirect to 42 OAuth provider"
+          }
+        }
+      }
+    },
+    "/auth/oauth/42/callback": {
+      "get": {
+        "tags": [
+          "OAuth"
+        ],
+        "security": [],
+        "summary": "42 OAuth2 callback \u2013 exchanges code for tokens",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Authorization code returned by 42"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "CSRF state parameter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OAuth login successful \u2013 token pair",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/llm/generate": {
+      "post": {
+        "tags": [
+          "LLM"
+        ],
+        "security": [],
+        "summary": "Stream a raw LLM completion (Server-Sent Events)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "messages",
+                  "nonce"
+                ],
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "content"
+                      ],
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "system",
+                            "user",
+                            "assistant"
+                          ]
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "example": [
+                      {
+                        "role": "user",
+                        "content": "Explain RAG in one sentence."
+                      }
+                    ]
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "example": "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Get job id to stream the llm response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": "number"
+                  },
+                  "example": {
+                    "jobId": 1
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/llm/stream/{jobId}": {
+      "post": {
+        "tags": [
+          "LLM"
+        ],
+        "security": [],
+        "summary": "Stream a raw LLM completion (Server-Sent Events)",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Chat session ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "nonce"
+                ],
+                "properties": {
+                  "nonce": {
+                    "type": "number",
+                    "example": "42"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream of token chunks",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "example": "data: {\"delta\": \"Retrieval\"}\n\ndata: [DONE]\n\n"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/llm/new-chat": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Create a new chat session",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "example": "My first chat"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Chat session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBox"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/llm/chat": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "List all chat sessions for current user",
+        "responses": {
+          "200": {
+            "description": "Array of chat sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatBox"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/llm/chat/{id}": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Send a message to a chat session and stream the LLM reply",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Chat session ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content",
+                  "nonce"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "example": "What is the subject of this document?"
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "example": "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/llm/history/{id}": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Get message history of a chat session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Chat session ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ordered list of messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Message"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
       },
       "delete": {
-        "summary": "Delete history chatbox."
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Delete all messages in a chat session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Chat session ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "History deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
       }
     },
-    "/chat/:id/:msgId": {
+    "/llm/chat/{id}/{msgId}": {
       "put": {
-        "summary": "Update a message and regenerate response from the llm"
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Edit a user message and regenerate the assistant reply",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Chat session ID"
+          },
+          {
+            "name": "msgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message ID to edit"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content",
+                  "nonce"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "example": "Actually, explain it in two sentences."
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "example": "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message updated, streaming regenerated reply",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
       }
     }
   }

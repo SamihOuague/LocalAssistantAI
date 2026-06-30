@@ -1,6 +1,7 @@
 services:
   setup:
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    container_name: setup
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
       - "./elk-setup/setup.sh:/usr/share/elasticsearch/setup.sh"
@@ -11,18 +12,39 @@ services:
     user: root
     command: "bash setup.sh"
     healthcheck:
-      test: ["CMD-SHELL", "[ -f config/certs/es01/es01.crt ]"]
+      test: [ "CMD-SHELL", "[ -f config/certs/es01/es01.crt ]" ]
       interval: 1s
       timeout: 5s
       retries: 120
-  swagger:
-    image: docker.swagger.io/swaggerapi/swagger-ui
-    ports:
-      - "8080:8080"
-    volumes:
-      - "./swagger:/config"
+  ragsetup:
+    image: rag
+    build: ./RAG
+    depends_on:
+      es01:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      vault:
+        condition: service_started
+    container_name: ragsetup
     environment:
-      - SWAGGER_JSON=/config/swagger.json
+      - ELASTIC_HOSTS=https://es01:9200
+      - OLLAMA_URL=${OLLAMA_URL}
+      - ELASTIC_INDEX=chatllm_rag
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID_ragsetup}
+      - VAULT_SECRET_ID=${VAULT_SECRET_ID_ragsetup}
+      - ELASTIC_CERT_PATH=/usr/share/ragsetup/config/certs/ca/ca.crt
+    volumes:
+      - certs:/usr/share/ragsetup/config/certs:ro
+  swagger:
+    image: swaggerapi/swagger-ui
+    container_name: swagger
+    volumes:
+      - "./swagger/swagger.json:/usr/share/nginx/html/swagger.json"
+    environment:
+      - SWAGGER_JSON_URL=swagger.json
+      - VALIDATOR_URL=none
   vault:
     image: hashicorp/vault:1.15
     container_name: vault
@@ -46,6 +68,7 @@ services:
       VAULT_ROLE_ID: ${VAULT_ROLE_ID_auth}
       VAULT_SECRET_ID: ${VAULT_SECRET_ID_auth}
       OAUTH_42_REDIRECT_URI: ${OAUTH_42_REDIRECT_URI}
+      FRONTEND_URL: ${FRONTEND_URL}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       NODE_ENV: production
       PORT: 3001
@@ -59,6 +82,7 @@ services:
       setup:
         condition: service_healthy
     build: ./elasticsearch
+    image: elasticsearch
     labels:
       co.elastic.logs/module: elasticsearch
     container_name: es01
@@ -85,17 +109,14 @@ services:
       - VAULT_ADDR=http://vault:8200
       - VAULT_ROLE_ID=${VAULT_ROLE_ID_elastic}
       - VAULT_SECRET_ID=${VAULT_SECRET_ID_elastic}
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
     mem_limit: ${ES_MEM_LIMIT}
     ulimits:
       memlock:
         soft: -1
         hard: -1
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
-        ]
+      test: [ "CMD-SHELL", "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'" ]
       interval: 10s
       timeout: 10s
       retries: 120
@@ -117,6 +138,7 @@ services:
     labels:
       co.elastic.logs/module: kibana
     container_name: kibana
+    image: kibana
     volumes:
       - certs:/usr/share/kibana/config/certs:ro
       - kibanadata:/usr/share/kibana/data
@@ -133,11 +155,7 @@ services:
       - VAULT_SECRET_ID=${VAULT_SECRET_ID_elastic}
     mem_limit: ${KB_MEM_LIMIT}
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
-        ]
+      test: [ "CMD-SHELL", "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'" ]
       interval: 10s
       timeout: 10s
       retries: 120
@@ -148,6 +166,7 @@ services:
       kibana:
         condition: service_healthy
     build: ./metricbeat
+    image: metricbeat
     container_name: metricbeat
     user: root
     volumes:
@@ -169,6 +188,7 @@ services:
         condition: service_healthy
     build: ./filebeat
     container_name: filebeat
+    image: filebeat
     user: root
     volumes:
       - certs:/usr/share/certs
@@ -189,6 +209,7 @@ services:
       kibana:
         condition: service_healthy
     container_name: logstash
+    image: logstash
     build: ./logstash
     labels:
       co.elastic.logs/module: logstash
@@ -221,6 +242,8 @@ services:
     container_name: chatllm
     depends_on:
       - ollama
+      - es01
+      - ragsetup
     labels:
       - chatllm
     restart: always
@@ -228,7 +251,8 @@ services:
       - 3002
     environment:
       - OLLAMA_URL=${OLLAMA_URL}
-      - VLLM_URL=${VLLM_URL}
+      - OLLM_MODEL_NAME=${OLLM_MODEL_NAME}
+      - GOOGLE_MODEL_NAME=${GOOGLE_MODEL_NAME}
       - ELASTIC_HOSTS=https://es01:9200
       - ELASTIC_CERT_PATH=/usr/share/chatllm/config/certs/ca/ca.crt
       - ELASTIC_INDEX=chatllm_rag
@@ -238,19 +262,11 @@ services:
       - VAULT_SECRET_ID=${VAULT_SECRET_ID_chatllm}
     volumes:
       - certs:/usr/share/chatllm/config/certs:ro
-  api-service:
-    build: ./api-service
-    container_name: api-service
-    labels:
-      - api-sevice
-    expose:
-      - 3000
-    depends_on:
-      - vault
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: frontend
     container_name: frontend
     expose:
       - 5173
@@ -261,7 +277,6 @@ services:
       - CHOKIDAR_USEPOLLING=true
     stdin_open: true
     tty: true
-    restart: unless-stopped
   nginx:
     build: ./nginx
     image: nginx
@@ -271,6 +286,7 @@ services:
       - kibana
       - vault
       - auth
+      - swagger
     restart: always
     labels:
       - nginx
@@ -278,13 +294,33 @@ services:
       - "443:443"
     volumes:
       - "filebeatlogs:/var/log/nginx"
+      - "./frontend/dist:/var/www/html"
       - certs:/etc/ssl/elk-certs
+  redis:
+    build: ./redis
+    container_name: redis
+    image: redis
+    volumes:
+      - redisdata:/data
+      - "./redis/redis.conf:/usr/local/etc/redis/redis.conf"
+    expose:
+      - 6379
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID_chatllm}
+      - VAULT_SECRET_ID=${VAULT_SECRET_ID_chatllm}
 
 volumes:
   kibanadata:
     driver: local
     driver_opts:
       device: /home/${USER}/data/kibana
+      o: bind
+      type: none
+  redisdata:
+    driver: local
+    driver_opts:
+      device: /home/${USER}/data/redis
       o: bind
       type: none
   certs:

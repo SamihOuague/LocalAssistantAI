@@ -44,10 +44,6 @@ until mariadb -u root -e "SELECT 1" >/dev/null 2>&1; do
     sleep 1
 done
 
-echo "DB_HOST = ${DB_HOST}"
-echo "DB_USER = ${DB_USER}"
-echo "DB_NAME = ${DB_NAME}"
-echo "db_password = ${DB_PASSWORD}"
 #DB_PASSWORD=$(cat /run/secrets/db_password)
 
 mariadb -u root <<EOF

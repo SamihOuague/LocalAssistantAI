@@ -41,25 +41,33 @@ class SemanticRouter {
 
     async classify(prompt) {
         const { content } = prompt;
-        const embed = await embeddings.embedQuery(content);
-        let best = { score: 0.0 };
-        let score = 0;
+
+        try {
+            const embed = await embeddings.embedQuery(content);
+        
+            let best = { score: 0.0 };
+            let score = 0;
 
 
-        for (const r in this.routes) {
-            for (const e in this.routes[r].embeds) {
-                score = this.cosineSimilarity(embed, this.routes[r].embeds[e]);
-                if (score > best.score)
-                    best = { ...this.routes[r], score };
+            for (const r in this.routes) {
+                for (const e in this.routes[r].embeds) {
+                    score = this.cosineSimilarity(embed, this.routes[r].embeds[e]);
+                    if (score > best.score)
+                        best = { ...this.routes[r], score };
+                }
             }
+            return best;
+        } catch(err) {
+            console.error(err);
+            return ({name: "complex", score: 0, examples: []});
         }
-        return best;
     }
 
     async initRoutes(routes) {
 
         for (let i = 0; i < routes.length; i++) {
             let { name, examples } = routes[i];
+
             await this.route(name, examples);
         }
     }
@@ -69,34 +77,26 @@ export const defaultRoutes = [
     {
         name: "simple",
         examples: [
-            "Quelle heure est-il ?",
-            "Traduis hello en français",
-            "Donne moi la capitale du Japon",
-            "Écris une fonction addition en JS",
-            "Résume ce texte",
-            "Comment créer un tableau en JavaScript ?"
+            "Hello",
+            "How are you ?",
+            "Summarize this conversation"
         ]
     },
     {
         name: "medium",
         examples: [
-            "Fais un plan d'entraînement pour perdre du poids",
-            "Compare React et Vue avec avantages et inconvénients",
-            "Crée une API Express avec authentification JWT",
-            "Explique les promesses en JavaScript avec exemples",
-            "Optimise cette requête SQL",
-            "Écris un script Node.js qui lit un fichier CSV"
+            "Give me more informations about this project",
+            "Tell me about the architecture",
+            "What is a RAG ?",
+            "What modules are claimed ?"
         ]
     },
     {
         name: "complex",
         examples: [
-            "Conçois une architecture microservice scalable pour un SaaS",
-            "Crée un assistant IA avec mémoire et vector database",
-            "Analyse cette codebase et propose un refactoring complet",
-            "Développe un système de recommandation distribué",
-            "Explique comment entraîner un modèle transformer depuis zéro",
-            "Construis un clone de ChatGPT avec streaming et RAG"
+            "Write a script that interact with the api",
+            "Give me a complete detailed description of the project",
+            "Explain every single service in this docs"
         ]
     },
 ]

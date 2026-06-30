@@ -10,11 +10,26 @@
 /*                                                                            */
 /* ************************************************************************** */
 
+import { Link } from "react-router-dom";
+
+
 function Footer() {
     return (
-        <footer className="footer">
-            © Transcendance 2026
-        </footer>
+		<footer className="bg-dark text-light py-3">
+			<div className="container text-center">
+				<p className="mb-2">
+					© 2026 Transcendance
+				</p>
+				<div className="d-flex justify-content-center gap-3">
+					<Link className="text-light" to="/privacy">
+						Privacy Policy
+					</Link>
+					<Link className="text-light" to="/terms">
+						Terms of Service
+					</Link>
+				</div>
+			</div>
+		</footer>
     );
 }
 export default Footer;

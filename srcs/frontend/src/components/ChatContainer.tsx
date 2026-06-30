@@ -10,22 +10,28 @@
 /*                                                                            */
 /* ************************************************************************** */
 
-import MessageBubble from "./MessageBubble";
+import Markdown from "react-markdown";
 
-type ChatContainerProps = {
-    messages: { role: string, content: string }[];
-    buffer: string;
-};
-
-function ChatContainer({ messages, buffer }: ChatContainerProps) {
+function ChatContainer({ buffer, messages }: any) {
     return (
-        <div className="chat-container">
-            {
-                messages.map(
-                    (message: any, index: number) => (<MessageBubble key={index} role={message.role} content={message.content} />)
-                )
+        <div style={{ flex: 8, overflowY: "scroll", overflowX: "hidden" }} className="d-flex flex-column p-3">
+            {messages.map((value: any, key: any) => (
+                <div key={key} className={`text-light p-2 d-flex ${(value.role === "user") && "justify-content-end"}`}>
+                    <div className={`p-3 ${(value.role === "assistant") ? "flex-grow-1" : "bg-dark rounded-4"}`}>
+                        {(value.role !== "assistant") ?
+                            <p className="m-0">{value.content}</p> :
+                            <Markdown>{value.content}</Markdown>
+                        }
+                    </div>
+                </div>
+            ))}
+            {(buffer !== "") &&
+                <div className={`text-light p-2 d-flex`}>
+                    <div className={`p-3 "flex-grow-1"}`}>
+                        <Markdown>{buffer}</Markdown>
+                    </div>
+                </div>
             }
-            {(buffer !== "") && <MessageBubble role={"assistant"} content={buffer} />}
         </div>
     );
 }

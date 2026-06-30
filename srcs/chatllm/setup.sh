@@ -40,6 +40,14 @@ SECRETS=$(curl -s \
 
 export ELASTIC_USER=$(echo "$SECRETS" | jq -r '.ELASTIC_USER')
 export ELASTIC_PASSWORD=$(echo "$SECRETS" | jq -r '.ELASTIC_PASSWORD')
+
+echo "[entrypoint] Fetching secrets..."
+SECRETS=$(curl -s \
+  --header "X-Vault-Token: $TOKEN" \
+  $VAULT_ADDR/v1/secret/data/chatllm-service | jq -r '.data.data')
+
+export REDIS_PASSWORD=$(echo "$SECRETS" | jq -r '.REDIS_PASSWORD')
+export GOOGLE_API_KEY=$(echo "$SECRETS" | jq -r '.GOOGLE_API_KEY')
 #--------------------------------------------------------------------------------------------------
 
 npm run start

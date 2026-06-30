@@ -11,15 +11,16 @@
 /* ************************************************************************** */
 
 import { Link } from "react-router-dom";
+
 function Home() {
     return (
         <div className="card">
-            <h1>Bienvenue</h1>
+            <h1 className="text-primary" >Bienvenue</h1>
             <p>
                 Page d'accueil, projet de Samih, Logan, Moussa, Odile.
             </p>
-            <Link to="/login">
-                <button>
+            <Link to="/chat">
+                <button className="btn btn-success">
                     Commencer
                 </button>
             </Link>

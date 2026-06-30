@@ -79,26 +79,62 @@ setup-volumes:
 		$(DATA_DIR)/filebeat_logs \
 		$(DATA_DIR)/mariadb \
 		$(DATA_DIR)/ollama \
-		$(DATA_DIR)/kibana
+		$(DATA_DIR)/kibana \
+		$(DATA_DIR)/redis
 	@ls -l $(DATA_DIR)
+
+
+### -----------------------------------------
+###  WAIT FOR VAULT (RELIABLE + TIMEOUT + VERBOSE)
+### -----------------------------------------
+
+wait-for-vault:
+	@echo "⏳ Waiting for Vault to be ready (timeout 60s)..."
+	@sh -c ' \
+        MAX=60; \
+        COUNT=0; \
+        while [ $$COUNT -lt $$MAX ]; do \
+            OUT=$$(docker exec $(VAULT_CONTAINER) sh -c "wget -qO- http://127.0.0.1:8200/v1/sys/health"); \
+            STATUS=$$?; \
+            if [ $$STATUS -eq 0 ] && [ "$$OUT" != "" ]; then \
+                echo "✔ Vault responded:"; \
+                echo "$$OUT"; \
+                echo "✔ Vault is ready."; \
+                exit 0; \
+            fi; \
+            echo "   → Vault not ready yet... ($$COUNT/$$MAX)"; \
+            sleep 1; \
+            COUNT=$$((COUNT+1)); \
+        done; \
+        echo "❌ ERROR: Vault did not become ready after $$MAX seconds."; \
+        exit 1; \
+    '
+
 ### -----------------------------------------
 ###  FULL SETUP PIPELINE
 ### -----------------------------------------
 
-full-setup:
+full-setup: setup-volumes
+	mkcert -install
+	mkcert \
+		-cert-file srcs/nginx/ft_transcendence.pem \
+		-key-file srcs/nginx/ft_transcendence-key.pem \
+		ft_transcendence api.ft_transcendence kibana.ft_transcendence
 	docker compose -f srcs/compose.yml down -v
 	@echo "Starting Vault + AppRole + Secrets setup..."
 	docker compose -f srcs/compose.yml up -d ollama vault
-	sleep 3
+	$(MAKE) wait-for-vault
 	$(MAKE) vault-enable-approle
 	$(MAKE) vault-load-policies
 	$(MAKE) vault-create-approles
 	$(MAKE) vault-generate-ids
 	$(MAKE) vault-load-secrets
 	docker compose -f srcs/compose.yml exec -it ollama ollama pull embeddinggemma
-	docker compose -f srcs/compose.yml exec -it ollama ollama pull llama3.1
+	docker compose -f srcs/compose.yml exec -it ollama ollama pull qwen2.5:3b
+	@echo "Vault + AppRole + Secrets fully configured."
+
+all: full-setup
 	docker compose -f srcs/compose.yml up -d --build --remove-orphans
-	@echo "✔ Vault + AppRole + Secrets fully configured."
 
 down:
 	@docker compose -f srcs/compose.yml down -v

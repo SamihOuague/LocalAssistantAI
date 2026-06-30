@@ -4,6 +4,7 @@ import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import express, { Request, Response } from 'express';
 import { createAuthRouter } from './routes/auth.js';
 import { createFriendsRouter } from './routes/friends.js';
+import { createUsersRouter } from './routes/users.js';
 import { importPKCS8, importSPKI } from 'jose';
 import cookieParser from 'cookie-parser';
 import { createEncryptor } from './auth/encryption.js';
@@ -25,7 +26,6 @@ if (!vaultSecretId) {
 }
 
 interface AuthSecrets {
-  DATABASE_URL: string;
   JWT_PRIVATE_KEY: string;
   JWT_PUBLIC_KEY: string;
   TOTP_ENCRYPTION_KEY: string;
@@ -34,8 +34,16 @@ interface AuthSecrets {
   OAUTH_42_CLIENT_SECRET: string;
 }
 
+interface DbSecrets {
+  DB_NAME: string;
+  DB_USER: string;
+  DB_PASSWORD: string;
+  DB_HOST: string;
+  DB_DIALECT: string;
+}
+
 async function vaultLogin(addr: string, roleId: string, secretId: string): Promise<string> {
-  console.log('Authenticating to Vault...', `${addr}/v1/auth/approle/login`, roleId, secretId);
+  console.log('Authenticating to Vault...', `${addr}/v1/auth/approle/login`);
   const res = await fetch(`${addr}/v1/auth/approle/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -49,23 +57,25 @@ async function vaultLogin(addr: string, roleId: string, secretId: string): Promi
   return json.auth.client_token;
 }
 
-async function getSecrets(addr: string, token: string): Promise<AuthSecrets> {
+async function getSecrets<T>(addr: string, token: string, path: string): Promise<T> {
   console.log('Fetching secrets from Vault...');
-  const res = await fetch(`${addr}/v1/secret/data/auth-service`, {
+  const res = await fetch(`${addr}/v1/secret/data/${path}`, {
     headers: { 'X-Vault-Token': token },
   });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Vault secret fetch failed: ${res.status} ${body}`);
   }
-  const json = await res.json() as { data: { data: AuthSecrets } };
+  const json = await res.json() as { data: { data: T } };
   return json.data.data;
 }
 
 const vaultToken = await vaultLogin(vaultAddr, vaultRoleId, vaultSecretId);
-const secrets = await getSecrets(vaultAddr, vaultToken);
+const secrets = await getSecrets<AuthSecrets>(vaultAddr, vaultToken, "auth-service");
+const mariaSecrets = await getSecrets<DbSecrets>(vaultAddr, vaultToken, "mariadb-service");
 
-process.env.DATABASE_URL = secrets.DATABASE_URL;
+const databaseUrl = `mysql://${mariaSecrets.DB_USER}:${mariaSecrets.DB_PASSWORD}@${mariaSecrets.DB_HOST}:3306/${mariaSecrets.DB_NAME}`;
+process.env.DATABASE_URL = databaseUrl;
 let migrated = false;
 for (let attempt = 1; attempt <= 30; attempt++) {
   try {
@@ -114,6 +124,10 @@ if (!oauth42RedirectUri) {
   throw new Error('OAUTH_42_REDIRECT_URI is not set');
 }
 
+const frontendUrl = process.env.FRONTEND_URL;
+if (!frontendUrl) {
+  throw new Error('FRONTEND_URL is not set');
+}
 const allowedOriginsRaw = process.env.ALLOWED_ORIGINS;
 if (!allowedOriginsRaw)
 {
@@ -127,7 +141,7 @@ if (allowedOrigins.size === 0)
 	throw new Error('ALLOWED_ORIGINS is empty after parsing');
 }
 
-const adapter = new PrismaMariaDb(secrets.DATABASE_URL);
+const adapter = new PrismaMariaDb(databaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 const app = express();
@@ -158,6 +172,7 @@ app.get('/health/ready', async (req: Request, res: Response) => {
 
 app.use('/', createAuthRouter(prisma, privateKey, publicKey, {
   cookieSecret: oauthCookieSecret,
+  frontendUrl: frontendUrl,
   providers: {
     fortyTwo: {
       clientId: oauth42ClientId,
@@ -168,6 +183,7 @@ app.use('/', createAuthRouter(prisma, privateKey, publicKey, {
 }, encryptor, allowedOrigins));
 
 app.use('/friends', createFriendsRouter(prisma, publicKey));
+app.use('/users', createUsersRouter(prisma, publicKey));
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({

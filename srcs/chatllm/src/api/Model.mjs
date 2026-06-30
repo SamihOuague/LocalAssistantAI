@@ -1,8 +1,5 @@
 import { Sequelize, DataTypes, Model } from "sequelize";
-import { readFileSync, readdirSync } from "node:fs";
 
-
-console.log(process.env.DB_DIALECT);
 const sequelize = new Sequelize(
     process.env.DB_NAME,
     process.env.DB_USER,
@@ -58,7 +55,7 @@ ChatMessage.init(
         thinking: {
             type: DataTypes.TEXT,
             allowNull: true,
-        },
+        }
     },
     {
         sequelize,
